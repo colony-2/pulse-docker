@@ -1,0 +1,98 @@
+[
+  {
+    "Launch": {
+      "launch_id": "golden-minimal",
+      "cpu_millis": 0,
+      "memory_bytes": 0,
+      "scratch_bytes": 0,
+      "base": "ubuntu-26*",
+      "job": {
+        "jobdb": "http://jobdb/tenant",
+        "instance_id": "db",
+        "tenant_id": "tenant",
+        "job_id": "job"
+      },
+      "lease": " synthetic lease\nwith whitespace \n"
+    },
+    "Defaults": {
+      "A_FIRST": "first",
+      "Z_LAST": "last"
+    },
+    "NativeJSON": "{\"launch_id\":\"golden-minimal\",\"cpu_millis\":0,\"memory_bytes\":0,\"scratch_bytes\":0,\"platform\":\"linux/arm64\",\"image\":\"ghcr.io/colony-2/base2:latest\",\"metadata\":{\"pulse_job_id\":\"job\",\"pulse_jobdb\":\"http://jobdb/tenant\",\"pulse_jobdb_instance_id\":\"db\",\"pulse_launch_id\":\"golden-minimal\",\"pulse_managed_by\":\"pulse\",\"pulse_metadata_version\":\"1\",\"pulse_tenant_id\":\"tenant\"},\"process\":{\"command\":[\"c2j\"],\"args\":[\"run\",\"with-lease\",\"--jobdb\",\"http://jobdb/tenant\",\"--job-id\",\"job\",\"--lease-file\",\"-\",\"--ci\",\"--input-mode\",\"fail\"],\"env\":{\"A_FIRST\":\"first\",\"C2J_EXECUTION_BASE\":\"ubuntu-26.04-arm64\",\"C2J_EXECUTION_CAPABILITIES\":\"[]\",\"C2J_EXECUTION_IMAGE\":\"ghcr.io/colony-2/base2:latest\",\"C2J_EXECUTION_PLATFORM\":\"linux/arm64\",\"PULSE_EXECUTION_BASE\":\"ubuntu-26.04-arm64\",\"PULSE_JOBDB\":\"http://jobdb/tenant\",\"PULSE_JOBDB_INSTANCE_ID\":\"db\",\"PULSE_JOB_ID\":\"job\",\"PULSE_LAUNCH_ID\":\"golden-minimal\",\"PULSE_MANAGED_BY\":\"pulse\",\"PULSE_METADATA_VERSION\":\"1\",\"PULSE_TENANT_ID\":\"tenant\",\"Z_LAST\":\"last\"},\"stdin\":\" synthetic lease\\nwith whitespace \\n\"}}",
+    "Fingerprint": "6b093dc56d0207af5ebe20f5a1cf935976b4743c6dd07b9ae541124946ec500c",
+    "Name": "pulse-10c9ce1ed2635be7230ef6478e018239",
+    "Accounting": "{\"cpu\":0,\"memory\":0,\"slots\":1}",
+    "CacheKey": "9dd1769ca3971e3aad52cfd386889831934b82bb9050ac51bd4615cc52225a55",
+    "CacheOwner": "b276e0a057eee8038be408939f124a510be194242e2f91b06dfd363b5ef987a8",
+    "CacheLabels": {
+      "pulse_cache_key": "9dd1769ca3971e3aad52cfd386889831934b82bb9050ac51bd4615cc52225a55",
+      "pulse_cache_layout": "2",
+      "pulse_cache_owner": "b276e0a057eee8038be408939f124a510be194242e2f91b06dfd363b5ef987a8",
+      "pulse_resource_role": "tools"
+    },
+    "Cursor": "eyJBZnRlciI6ImEiLCJMYXVuY2giOiJnb2xkZW4tbWluaW1hbCJ9"
+  },
+  {
+    "Launch": {
+      "launch_id": "golden-present",
+      "cpu_millis": 101,
+      "memory_bytes": 7000001,
+      "scratch_bytes": 4101,
+      "base": "ubuntu-26.04-amd64",
+      "job": {
+        "jobdb": "https://jobdb.example/tenant",
+        "instance_id": "db",
+        "tenant_id": "tenant",
+        "job_id": "other"
+      },
+      "lease": "synthetic-present",
+      "timeout_seconds": 42,
+      "start_before": "2026-11-30T12:30:00.000000123Z"
+    },
+    "Defaults": {
+      "A_FIRST": "first",
+      "Z_LAST": "last"
+    },
+    "NativeJSON": "{\"launch_id\":\"golden-present\",\"cpu_millis\":101,\"memory_bytes\":7000001,\"scratch_bytes\":4101,\"platform\":\"linux/amd64\",\"image\":\"ghcr.io/colony-2/base2:latest\",\"timeout_seconds\":42,\"start_before\":\"2026-11-30T12:30:00.000000123Z\",\"metadata\":{\"pulse_job_id\":\"other\",\"pulse_jobdb\":\"https://jobdb.example/tenant\",\"pulse_jobdb_instance_id\":\"db\",\"pulse_launch_id\":\"golden-present\",\"pulse_managed_by\":\"pulse\",\"pulse_metadata_version\":\"1\",\"pulse_tenant_id\":\"tenant\"},\"process\":{\"command\":[\"c2j\"],\"args\":[\"run\",\"with-lease\",\"--jobdb\",\"https://jobdb.example/tenant\",\"--job-id\",\"other\",\"--lease-file\",\"-\",\"--ci\",\"--input-mode\",\"fail\"],\"env\":{\"A_FIRST\":\"first\",\"C2J_EXECUTION_BASE\":\"ubuntu-26.04-amd64\",\"C2J_EXECUTION_CAPABILITIES\":\"[]\",\"C2J_EXECUTION_CPU\":\"101m\",\"C2J_EXECUTION_EPHEMERAL_STORAGE\":\"4.101k\",\"C2J_EXECUTION_IMAGE\":\"ghcr.io/colony-2/base2:latest\",\"C2J_EXECUTION_MEMORY\":\"7000.001k\",\"C2J_EXECUTION_PLATFORM\":\"linux/amd64\",\"PULSE_EXECUTION_BASE\":\"ubuntu-26.04-amd64\",\"PULSE_JOBDB\":\"https://jobdb.example/tenant\",\"PULSE_JOBDB_INSTANCE_ID\":\"db\",\"PULSE_JOB_ID\":\"other\",\"PULSE_LAUNCH_ID\":\"golden-present\",\"PULSE_MANAGED_BY\":\"pulse\",\"PULSE_METADATA_VERSION\":\"1\",\"PULSE_TENANT_ID\":\"tenant\",\"Z_LAST\":\"last\"},\"stdin\":\"synthetic-present\"}}",
+    "Fingerprint": "7251057932b7cbb2a204b4268fb202c9613ba4732bc57d35fd35f7e14ad069c1",
+    "Name": "pulse-f251f92c0f14d4a448c66d8b37b4ae10",
+    "Accounting": "{\"cpu\":101,\"memory\":7004102,\"slots\":1}",
+    "CacheKey": "87454a91684c62248cb2d4af6f125104ea382440178610d87127fc35532e63c4",
+    "CacheOwner": "b276e0a057eee8038be408939f124a510be194242e2f91b06dfd363b5ef987a8",
+    "CacheLabels": {
+      "pulse_cache_key": "87454a91684c62248cb2d4af6f125104ea382440178610d87127fc35532e63c4",
+      "pulse_cache_layout": "2",
+      "pulse_cache_owner": "b276e0a057eee8038be408939f124a510be194242e2f91b06dfd363b5ef987a8",
+      "pulse_resource_role": "tools"
+    },
+    "Cursor": "eyJBZnRlciI6ImEiLCJMYXVuY2giOiJnb2xkZW4tcHJlc2VudCJ9"
+  },
+  {
+    "Launch": {
+      "launch_id": "golden-oci",
+      "cpu_millis": 500,
+      "memory_bytes": 134217728,
+      "scratch_bytes": 0,
+      "base": "oci:linux/arm64:docker.io/library/alpine:3.21",
+      "job": {
+        "jobdb": "http://jobdb/other",
+        "instance_id": "db2",
+        "tenant_id": "other",
+        "job_id": "legacy"
+      },
+      "lease": "synthetic-oci"
+    },
+    "Defaults": {
+      "A_FIRST": "first",
+      "Z_LAST": "last"
+    },
+    "NativeJSON": "{\"launch_id\":\"golden-oci\",\"cpu_millis\":500,\"memory_bytes\":134217728,\"scratch_bytes\":0,\"platform\":\"linux/arm64\",\"image\":\"docker.io/library/alpine:3.21\",\"metadata\":{\"pulse_job_id\":\"legacy\",\"pulse_jobdb\":\"http://jobdb/other\",\"pulse_jobdb_instance_id\":\"db2\",\"pulse_launch_id\":\"golden-oci\",\"pulse_managed_by\":\"pulse\",\"pulse_metadata_version\":\"1\",\"pulse_tenant_id\":\"other\"},\"process\":{\"command\":[\"c2j\"],\"args\":[\"run\",\"with-lease\",\"--jobdb\",\"http://jobdb/other\",\"--job-id\",\"legacy\",\"--lease-file\",\"-\",\"--ci\",\"--input-mode\",\"fail\"],\"env\":{\"A_FIRST\":\"first\",\"C2J_EXECUTION_BASE\":\"oci:linux/arm64:docker.io/library/alpine:3.21\",\"C2J_EXECUTION_CAPABILITIES\":\"[]\",\"C2J_EXECUTION_CPU\":\"500m\",\"C2J_EXECUTION_IMAGE\":\"docker.io/library/alpine:3.21\",\"C2J_EXECUTION_MEMORY\":\"131072Ki\",\"C2J_EXECUTION_PLATFORM\":\"linux/arm64\",\"PULSE_EXECUTION_BASE\":\"oci:linux/arm64:docker.io/library/alpine:3.21\",\"PULSE_JOBDB\":\"http://jobdb/other\",\"PULSE_JOBDB_INSTANCE_ID\":\"db2\",\"PULSE_JOB_ID\":\"legacy\",\"PULSE_LAUNCH_ID\":\"golden-oci\",\"PULSE_MANAGED_BY\":\"pulse\",\"PULSE_METADATA_VERSION\":\"1\",\"PULSE_TENANT_ID\":\"other\",\"Z_LAST\":\"last\"},\"stdin\":\"synthetic-oci\"}}",
+    "Fingerprint": "25a7018e0b4d67a201e6c6b92bebbd9e116233f0f8be5a9463687000f7ca1665",
+    "Name": "pulse-9b571c1989a5e8797ac7748803d1bad8",
+    "Accounting": "{\"cpu\":500,\"memory\":134217728,\"slots\":1}",
+    "CacheKey": "",
+    "CacheOwner": "",
+    "CacheLabels": null,
+    "Cursor": "eyJBZnRlciI6ImEiLCJMYXVuY2giOiJnb2xkZW4tb2NpIn0"
+  }
+]

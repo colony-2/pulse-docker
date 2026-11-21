@@ -1,0 +1,36 @@
+id: pulse-docker-verify
+input_schema:
+  api_version: {type: string, default_value: c2.build-hook/v1}
+  request: {type: string, default_value: ''}
+  target_directory: {type: string, default_value: '.'}
+  candidate: {type: string, default_value: working-tree}
+  base: {type: string, default_value: ''}
+  documents: {type: artifact_map, default_value: {}}
+  settings: {type: artifact, required: false}
+  prompt: {type: string, default_value: ''}
+  title: {type: string, default_value: ''}
+inputs:
+  api_version: ${{ inputs.api_version }}
+  request: ${{ inputs.request }}
+  target_directory: ${{ inputs.target_directory }}
+  candidate: ${{ inputs.candidate }}
+  base: ${{ inputs.base }}
+  documents: ${{ inputs.documents }}
+sequence:
+- id: deterministic
+  op: command_execution
+  const: true
+  inputs:
+    timeout: 20m
+    capture_diagnostics: always
+    env:
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      GOWORK: 'off'
+      GOTOOLCHAIN: local
+      CGO_ENABLED: '1'
+    run: ./scripts/verify.sh
+outputs:
+  api_version: c2.build-hook/v1
+  status: passed
+  summary: Deterministic tests, race, vet, builds, modules, consumer and live-result harnesses, failure evidence and completed-lease setup passed. Required live Docker acceptance needs separate evidence.
+  artifact_refs: ${{ sequence.deterministic.outputs.diagnostics }}

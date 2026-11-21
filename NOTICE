@@ -1,0 +1,13 @@
+pulse-docker
+
+This library contains code extracted and adapted from Pulse:
+https://github.com/colony-2/pulse
+revision 6c20e087383ac7c333f562aa373c873bd5423db6
+
+Pulse is licensed under the Apache License, Version 2.0. The upstream LICENSE
+is preserved here. No upstream NOTICE file existed at that revision.
+
+The private selector matching and capability-name validation functions are
+adapted from c2j, https://github.com/colony-2/c2j,
+revision cd211e6aead8 (v0.0.129-0.20261115173350-cd211e6aead8), also licensed
+under the Apache License, Version 2.0.

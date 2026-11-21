@@ -1,0 +1,234 @@
+{
+  "recipe": "../recipes/hooks/build/verify.yaml",
+  "cases": [
+    {
+      "id": "standard-build-hook-inputs",
+      "type": "integration_case",
+      "runtime": {},
+      "inputs": {
+        "api_version": "c2.build-hook/v1",
+        "request": "verify $(touch never-execute)",
+        "target_directory": "; touch never-execute",
+        "candidate": "candidate; $(touch never-execute)",
+        "base": "base",
+        "documents": {}
+      },
+      "mocks": {
+        "ops": [
+          {
+            "match": {
+              "node_path": "pulse-docker-verify/deterministic"
+            },
+            "behavior": {
+              "mode": "return",
+              "outputs": {
+                "success": true,
+                "exit_code": 0,
+                "timed_out": false,
+                "stdout": "Deterministic verification passed.",
+                "error_message": ""
+              }
+            }
+          }
+        ]
+      },
+      "assertions": [
+        {
+          "type": "output_equals",
+          "path": "api_version",
+          "value": "c2.build-hook/v1"
+        },
+        {
+          "type": "output_equals",
+          "path": "status",
+          "value": "passed"
+        },
+        {
+          "type": "cel_true",
+          "expr": "calls.size() == 1"
+        },
+        {
+          "type": "op_input_equals",
+          "node_path": "pulse-docker-verify/deterministic",
+          "path": "run",
+          "value": "./scripts/verify.sh"
+        },
+        {
+          "type": "op_input_equals",
+          "node_path": "pulse-docker-verify/deterministic",
+          "path": "env.VERIFY_CANDIDATE",
+          "value": "candidate; $(touch never-execute)"
+        },
+        {
+          "type": "op_input_equals",
+          "node_path": "pulse-docker-verify/deterministic",
+          "path": "capture_diagnostics",
+          "value": "always"
+        }
+      ]
+    },
+    {
+      "id": "standalone-defaults",
+      "type": "integration_case",
+      "runtime": {},
+      "inputs": {},
+      "mocks": {
+        "ops": [
+          {
+            "match": {
+              "node_path": "pulse-docker-verify/deterministic"
+            },
+            "behavior": {
+              "mode": "return",
+              "outputs": {
+                "success": true,
+                "exit_code": 0,
+                "timed_out": false,
+                "stdout": "Deterministic verification passed.",
+                "error_message": ""
+              }
+            }
+          }
+        ]
+      },
+      "assertions": [
+        {
+          "type": "output_equals",
+          "path": "api_version",
+          "value": "c2.build-hook/v1"
+        },
+        {
+          "type": "output_equals",
+          "path": "status",
+          "value": "passed"
+        },
+        {
+          "type": "cel_true",
+          "expr": "calls.size() == 1"
+        },
+        {
+          "type": "op_input_equals",
+          "node_path": "pulse-docker-verify/deterministic",
+          "path": "run",
+          "value": "./scripts/verify.sh"
+        },
+        {
+          "type": "op_input_equals",
+          "node_path": "pulse-docker-verify/deterministic",
+          "path": "env.VERIFY_CANDIDATE",
+          "value": "working-tree"
+        },
+        {
+          "type": "op_input_equals",
+          "node_path": "pulse-docker-verify/deterministic",
+          "path": "capture_diagnostics",
+          "value": "always"
+        }
+      ]
+    },
+    {
+      "id": "command-error-propagates",
+      "type": "integration_case",
+      "runtime": {},
+      "inputs": {
+        "api_version": "c2.build-hook/v1",
+        "request": "verify $(touch never-execute)",
+        "target_directory": "; touch never-execute",
+        "candidate": "candidate; $(touch never-execute)",
+        "base": "base",
+        "documents": {}
+      },
+      "mocks": {
+        "ops": [
+          {
+            "match": {
+              "node_path": "pulse-docker-verify/deterministic"
+            },
+            "behavior": {
+              "mode": "fail",
+              "error": {
+                "message": "controlled verification command failure"
+              }
+            }
+          }
+        ]
+      },
+      "assertions": [],
+      "expect_error": "controlled verification command failure"
+    },
+    {
+      "id": "reject-api_version",
+      "type": "integration_case",
+      "runtime": {},
+      "inputs": {
+        "api_version": true,
+        "request": "verify $(touch never-execute)",
+        "target_directory": "; touch never-execute",
+        "candidate": "candidate; $(touch never-execute)",
+        "base": "base",
+        "documents": {}
+      },
+      "mocks": {
+        "ops": []
+      },
+      "assertions": [],
+      "expect_error": "api_version"
+    },
+    {
+      "id": "reject-documents",
+      "type": "integration_case",
+      "runtime": {},
+      "inputs": {
+        "api_version": "c2.build-hook/v1",
+        "request": "verify $(touch never-execute)",
+        "target_directory": "; touch never-execute",
+        "candidate": "candidate; $(touch never-execute)",
+        "base": "base",
+        "documents": "invalid"
+      },
+      "mocks": {
+        "ops": []
+      },
+      "assertions": [],
+      "expect_error": "documents"
+    },
+    {
+      "id": "reject-settings",
+      "type": "integration_case",
+      "runtime": {},
+      "inputs": {
+        "api_version": "c2.build-hook/v1",
+        "request": "verify $(touch never-execute)",
+        "target_directory": "; touch never-execute",
+        "candidate": "candidate; $(touch never-execute)",
+        "base": "base",
+        "documents": {},
+        "settings": 3
+      },
+      "mocks": {
+        "ops": []
+      },
+      "assertions": [],
+      "expect_error": "settings"
+    },
+    {
+      "id": "reject-unexpected",
+      "type": "integration_case",
+      "runtime": {},
+      "inputs": {
+        "api_version": "c2.build-hook/v1",
+        "request": "verify $(touch never-execute)",
+        "target_directory": "; touch never-execute",
+        "candidate": "candidate; $(touch never-execute)",
+        "base": "base",
+        "documents": {},
+        "unexpected": "unknown"
+      },
+      "mocks": {
+        "ops": []
+      },
+      "assertions": [],
+      "expect_error": "unexpected"
+    }
+  ]
+}
