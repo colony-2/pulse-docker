@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -74,5 +75,17 @@ func TestDockerRemoteFixtureRemovalObservation(t *testing.T) {
 		if ids != "worker" || !errors.Is(err, failure) {
 			t.Fatalf("query failure passed: ids=%q error=%v", ids, err)
 		}
+	})
+	t.Run("persistent worker fails at deadline", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			ids, err := waitRemoteFixtureRemoval(ctx, func(context.Context) (string, error) {
+				return "worker\n", nil
+			})
+			if ids != "worker" || !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("persistent worker passed: ids=%q error=%v", ids, err)
+			}
+		})
 	})
 }

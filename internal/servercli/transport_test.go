@@ -507,7 +507,14 @@ func TestInboundChild(t *testing.T) {
 		return
 	}
 	command := newCommand(func(ctx context.Context, o serverOptions) error {
-		return runPlugin(ctx, o, func(serverOptions) (runtimeProvider, error) { return fixtureRuntime(), nil })
+		return runPlugin(ctx, o, func(serverOptions) (runtimeProvider, error) {
+			if marker := os.Getenv("PULSE_CLI_FACTORY_MARKER"); marker != "" {
+				if err := os.WriteFile(marker, []byte("opened"), 0600); err != nil {
+					return nil, err
+				}
+			}
+			return fixtureRuntime(), nil
+		})
 	})
 	command.SetArgs([]string{"server", "--mode", "inbound", "--owner", "worker"})
 	if err := command.Execute(); err != nil {
@@ -523,16 +530,52 @@ func TestInboundSDKProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	process, err := plugin.Start(t.Context(), plugin.StartOptions{Executable: executable, Args: []string{"-test.run=^TestInboundChild$"}, Env: map[string]string{"PULSE_CLI_TEST_CHILD": "1", "HOME": t.TempDir()}, Init: plugin.Initialization{Name: "worker", BaseDir: t.TempDir()}})
+	marker := filepath.Join(t.TempDir(), "factory-opened")
+	process, err := plugin.Start(t.Context(), plugin.StartOptions{Executable: executable, Args: []string{"-test.run=^TestInboundChild$"}, Env: map[string]string{"PULSE_CLI_TEST_CHILD": "1", "HOME": t.TempDir(), "PULSE_CLI_FACTORY_MARKER": marker}, Init: plugin.Initialization{Name: "worker", BaseDir: t.TempDir()}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer process.Close()
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("valid initialization did not reach provider construction: %v", err)
+	}
 	caps, err := process.GetCapabilities(t.Context())
 	if err != nil || len(caps.Bases) != 1 {
 		t.Fatalf("discovery: %v", err)
 	}
 	if err := process.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestInboundSDKRejectsInvalidBaseDirBeforeConstruction(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("upstream inbound SDK process safeguards are currently Linux-only")
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, baseDir := range []string{"", "relative"} {
+		t.Run("base="+baseDir, func(t *testing.T) {
+			home := t.TempDir()
+			marker := filepath.Join(home, "factory-opened")
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			process, err := plugin.Start(ctx, plugin.StartOptions{
+				Executable: executable, Args: []string{"-test.run=^TestInboundChild$"},
+				Env:  map[string]string{"PULSE_CLI_TEST_CHILD": "1", "HOME": home, "PULSE_CLI_FACTORY_MARKER": marker},
+				Init: plugin.Initialization{Name: "worker", BaseDir: baseDir},
+			})
+			if process != nil {
+				defer process.Close()
+			}
+			if !errors.Is(err, plugin.ErrInvalid) || process != nil {
+				t.Fatalf("invalid inbound base directory accepted: process=%v error=%v", process, err)
+			}
+			if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("invalid initialization reached provider construction: %v", err)
+			}
+		})
 	}
 }

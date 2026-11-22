@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"syscall"
 	"testing"
@@ -211,6 +212,11 @@ func TestDockerFastCaptureIntegration(t *testing.T) {
 	if err != nil || len(out) != 1 || out[0].Status != compute.Accepted {
 		t.Fatal(out, err)
 	}
+	history, err := p.capture.store.Histories()
+	if err != nil || len(history) != 1 || history[0].LaunchID != id || history[0].ContainerID == "" {
+		t.Fatalf("missing exact fast-capture container identity: history=%+v error=%v", history, err)
+	}
+	containerID := history[0].ContainerID
 	page := waitFinalLog(t, ctx, p, id)
 	var raw []byte
 	for _, r := range page.Records {
@@ -224,7 +230,7 @@ func TestDockerFastCaptureIntegration(t *testing.T) {
 	// the worker ourselves until test cleanup.
 	removal, cancel := context.WithTimeout(ctx, 15*time.Second)
 	ids, err := waitRemoteFixtureRemoval(removal, func(check context.Context) (string, error) {
-		b, err := exec.CommandContext(check, "docker", "--host", cfg.Socket, "ps", "-aq", "--filter", "label=pulse_launch_id="+id).CombinedOutput()
+		b, err := exec.CommandContext(check, "docker", "--host", cfg.Socket, "ps", "-aq", "--no-trunc", "--filter", "id="+containerID).CombinedOutput()
 		if err != nil {
 			return "", fmt.Errorf("query worker removal: %w: %s", err, b)
 		}
@@ -234,7 +240,7 @@ func TestDockerFastCaptureIntegration(t *testing.T) {
 	if err != nil {
 		diagnostic, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		state, inspectErr := exec.CommandContext(diagnostic, "docker", append([]string{"--host", cfg.Socket, "inspect", "--format", "{{json .State}} autoremove={{.HostConfig.AutoRemove}}"}, strings.Fields(ids)...)...).CombinedOutput()
+		state, inspectErr := exec.CommandContext(diagnostic, "docker", "--host", cfg.Socket, "inspect", "--format", "status={{.State.Status}} exit={{.State.ExitCode}} autoremove={{.HostConfig.AutoRemove}}", containerID).CombinedOutput()
 		t.Fatalf("worker was not automatically removed: %v; last inventory=%q; inspect error=%v; state=%s", err, ids, inspectErr, state)
 	}
 	p.Close()
@@ -243,7 +249,7 @@ func TestDockerFastCaptureIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.Close()
-	if again, err := p.GetLaunchLog(ctx, api.LaunchLogRequest{LaunchID: id}); err != nil || len(again.Records) != len(page.Records) {
+	if again, err := p.GetLaunchLog(ctx, api.LaunchLogRequest{LaunchID: id}); err != nil || !reflect.DeepEqual(again.Records, page.Records) || !again.Finalized || again.Incomplete {
 		t.Fatal(again, err)
 	}
 }

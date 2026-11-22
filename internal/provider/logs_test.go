@@ -147,11 +147,15 @@ func TestLogsFastCaptureBeforeStartAndAfterRemoval(t *testing.T) {
 }
 func TestLogsCaptureFailurePreservesLeaseAdmission(t *testing.T) {
 	d := &daemon{containers: map[string]container{}}
+	leaseReceived := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/attach") && r.URL.Query().Get("stdout") == "1" {
 			w.WriteHeader(500)
 			io.WriteString(w, "private daemon body")
 			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/attach") && r.URL.Query().Get("stdin") == "1" {
+			defer close(leaseReceived)
 		}
 		d.serve(w, r)
 	}))
@@ -170,6 +174,13 @@ func TestLogsCaptureFailurePreservesLeaseAdmission(t *testing.T) {
 	page, err := store.GetLaunchLog(t.Context(), api.LaunchLogRequest{LaunchID: l.LaunchID})
 	if err != nil || !page.Incomplete || !page.Finalized {
 		t.Fatal(page, err)
+	}
+	// Submit finishes writing before the daemon handler necessarily observes EOF.
+	// Wait for the fixture to record the complete lease before asserting its bytes.
+	select {
+	case <-leaseReceived:
+	case <-time.After(5 * time.Second):
+		t.Fatal("daemon fixture did not finish receiving lease")
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()

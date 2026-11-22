@@ -97,6 +97,7 @@ case "$1" in
       if [ "$HARNESS_FAIL" = completion-selection ]; then echo 'controlled required failure' >&2; else echo TestDockerCompletedLeaseFixture; fi;;
      *)
       required=$(printf '%s' "$*" | sed -n 's/.*-list \^\([^$]*\)\$.*/\1/p')
+      if [ "$HARNESS_FAIL" = inbound-validation-selection ] && [ "$required" = TestInboundSDKRejectsInvalidBaseDirBeforeConstruction ]; then echo 'controlled required failure' >&2; exit 0; fi
       if [ "$HARNESS_FAIL" = since-selection ] && [ "$required" = TestLaunchesSinceDurationAndTimestamp ]; then echo 'controlled required failure' >&2; exit 0; fi
       if [ "$HARNESS_FAIL" = transport-selection ] && [ "$required" = TestManagementValidatesTransportBeforeEffects ]; then echo 'controlled required failure' >&2; exit 0; fi
       if [ "$HARNESS_FAIL" = partial-connection-selection ] && [ "$required" = TestManagementAllowsIncompleteConnectionSettings ]; then echo 'controlled required failure' >&2; exit 0; fi
@@ -115,7 +116,7 @@ esac
 	for _, tc := range []struct {
 		name string
 		code int
-	}{{"test", 23}, {"selection", 24}, {"graph", 25}, {"integration-selection", 26}, {"completion-selection", 1}, {"removal-selection", 1}, {"moved-selection", 1}, {"since-selection", 1}, {"transport-selection", 1}, {"partial-connection-selection", 1}} {
+	}{{"test", 23}, {"selection", 24}, {"graph", 25}, {"integration-selection", 26}, {"completion-selection", 1}, {"removal-selection", 1}, {"moved-selection", 1}, {"since-selection", 1}, {"transport-selection", 1}, {"partial-connection-selection", 1}, {"inbound-validation-selection", 1}} {
 		t.Run(tc.name, func(t *testing.T) {
 			cmd := exec.CommandContext(t.Context(), "bash", "./scripts/verify.sh")
 			cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "HARNESS_FAIL="+tc.name)

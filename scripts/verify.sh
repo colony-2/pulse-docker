@@ -27,6 +27,7 @@ done <<'REQUIRED'
 ./internal/servercli TestLaunchesSinceDurationAndTimestamp
 ./internal/servercli TestOutboundSDKReconnectAndCalls
 ./internal/servercli TestInboundSDKProcess
+./internal/servercli TestInboundSDKRejectsInvalidBaseDirBeforeConstruction
 ./internal/servercli TestCleanupTimeoutPreventsOverlappingReplacement
 ./cli TestEmbeddedCommandsInheritContextStreamsAndHooks
 . TestVerifyHookInputContract
