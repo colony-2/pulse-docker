@@ -46,7 +46,7 @@ func TestUncertaintyDoesNotReplayAfterMissingInventory(t *testing.T) {
 			defer p.Close()
 			l := assignment("uncertain")
 			for i := 0; i < 2; i++ {
-				out, err := p.Submit(context.Background(), []provider.Launch{l})
+				out, _, err := p.Submit(context.Background(), []provider.Launch{l}, provider.SubmitOptions{})
 				if err != nil || len(out) != 1 || out[0].Status != test.want || strings.Contains(out[0].Reason, "synthetic-credential") {
 					t.Fatal(out, err)
 				}

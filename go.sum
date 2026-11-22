@@ -18,8 +18,8 @@ github.com/colony-2/c2j v0.0.129-0.20261115173350-cd211e6aead8 h1:521aimHIkwtPi4
 github.com/colony-2/c2j v0.0.129-0.20261115173350-cd211e6aead8/go.mod h1:k/Q5SSmosfn3af5oRvsa+4t8tIeK3OWmo+FDH+Ywyaw=
 github.com/colony-2/jobdb v0.0.86 h1:R1sl0miyVd9Y6XJjFtb97ifxLzmLqrl6zOUVP23r7iQ=
 github.com/colony-2/jobdb v0.0.86/go.mod h1:45c4NbbKzZt8uRHgWUktOoGhsTkO8ogELlfxdqXJ4Ek=
-github.com/colony-2/pulse-provider-api v0.0.0-20261105011626-401f11e595a8 h1:pxBcBhAe/+SuTorfX6L8ia4k/lYx6bqF+n5jYRcyo2U=
-github.com/colony-2/pulse-provider-api v0.0.0-20261105011626-401f11e595a8/go.mod h1:k+Xog7z+dE1wxvl9fN4rfsptevZ5ANIH37j0xKZ8YJo=
+github.com/colony-2/pulse-provider-api v0.0.0-20261120061856-2919f1ed5e42 h1:wDYUQN3kKS/sU2lobaNVMNcNJtX1Ipv/P0PWCoXzqtA=
+github.com/colony-2/pulse-provider-api v0.0.0-20261120061856-2919f1ed5e42/go.mod h1:k+Xog7z+dE1wxvl9fN4rfsptevZ5ANIH37j0xKZ8YJo=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

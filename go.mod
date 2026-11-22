@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/colony-2/c2j v0.0.129-0.20261115173350-cd211e6aead8
 	github.com/colony-2/jobdb v0.0.86
-	github.com/colony-2/pulse-provider-api v0.0.0-20261105011626-401f11e595a8
+	github.com/colony-2/pulse-provider-api v0.0.0-20261120061856-2919f1ed5e42
 	github.com/distribution/reference v0.6.0
 	github.com/opencontainers/go-digest v1.0.0
 )

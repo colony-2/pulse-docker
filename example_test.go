@@ -19,7 +19,7 @@ func ExampleNew() {
 		}
 		defer p.Close()
 		var backend provider.Provider = p
-		results, err := backend.Submit(ctx, []provider.Launch{launch})
+		results, _, err := backend.Submit(ctx, []provider.Launch{launch}, provider.SubmitOptions{})
 		// Consume valid correlated results even when err is non-nil. Do not retry
 		// unknown/missing results or treat them as permission for fallback.
 		for _, result := range results {

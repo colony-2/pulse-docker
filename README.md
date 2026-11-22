@@ -15,7 +15,7 @@ if err != nil { return err }
 defer p.Close()
 
 var backend provider.Provider = p
-results, err := backend.Submit(ctx, []provider.Launch{launch})
+results, _, err := backend.Submit(ctx, []provider.Launch{launch}, provider.SubmitOptions{})
 // Inspect each valid result by LaunchID even when err != nil.
 // Unknown or missing results never authorize retry or immediate fallback.
 ```
@@ -32,8 +32,8 @@ closure and result handling, and [compatibility notes](docs/compatibility.md) fo
 existing workers, caches, serialized identities and uncertainty. The compiling
 [example](example_test.go) shows interface assignment, submission and maintenance.
 
-Go 1.26 is required. The shared API remains pinned to
-`v0.0.0-20261105011626-401f11e595a8`. Production code imports only that API, private
+Go 1.26 is required. The shared API is pinned to
+`v0.0.0-20261120061856-2919f1ed5e42`. Submit with empty options for Docker execution. Production code imports only that API, private
 helpers, distribution/reference and go-digest. c2j and JobDB dependencies support
 the real executor and cache fixtures. Native process types are confined to the
 module's `internal/` boundary; no root API accepts arbitrary commands.

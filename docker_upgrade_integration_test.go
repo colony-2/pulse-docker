@@ -138,12 +138,12 @@ func TestDockerUpgradeIntegration(t *testing.T) {
 			other.Close()
 			t.Fatal("second admission owner succeeded")
 		}
-		out, err := p.Submit(ctx, []provider.Launch{f.Launch})
+		out, _, err := p.Submit(ctx, []provider.Launch{f.Launch}, provider.SubmitOptions{})
 		if err != nil || len(out) != 1 || out[0].Status != provider.Accepted {
 			t.Fatal("original worker not recognized", out, err)
 		}
 		blocked := assignment("upgrade-blocked-" + compute.NewID())
-		out, err = p.Submit(ctx, []provider.Launch{blocked})
+		out, _, err = p.Submit(ctx, []provider.Launch{blocked}, provider.SubmitOptions{})
 		if err != nil || len(out) != 1 || out[0].Status != provider.NoCapacity {
 			t.Fatal("accounting was not restored", out, err)
 		}

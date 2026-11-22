@@ -93,19 +93,19 @@ func TestUpgradeOriginalWorkerIsRecognizedWithoutReplay(t *testing.T) {
 	c.Config.Labels[limitsLabel] = "disabled"
 	d.containers[c.ID] = c
 	p.env = f.Defaults
-	out, err := p.Submit(t.Context(), []provider.Launch{f.Launch})
+	out, _, err := p.Submit(t.Context(), []provider.Launch{f.Launch}, provider.SubmitOptions{})
 	if err != nil || len(out) != 1 || out[0].Status != provider.Accepted || len(d.creates) != 0 {
 		t.Fatal(out, err)
 	}
 	changed := f.Launch
 	changed.Lease = "different-synthetic-lease"
-	out, err = p.Submit(t.Context(), []provider.Launch{changed})
+	out, _, err = p.Submit(t.Context(), []provider.Launch{changed}, provider.SubmitOptions{})
 	if err != nil || out[0].Status != provider.Rejected || len(d.creates) != 0 {
 		t.Fatal("changed immutable payload accepted", out, err)
 	}
 	changed = f.Launch
 	changed.Job.JobID = "changed"
-	out, err = p.Submit(t.Context(), []provider.Launch{changed})
+	out, _, err = p.Submit(t.Context(), []provider.Launch{changed}, provider.SubmitOptions{})
 	if err != nil || out[0].Status != provider.Rejected || len(d.creates) != 0 {
 		t.Fatal(out, err)
 	}

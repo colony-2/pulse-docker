@@ -82,7 +82,7 @@ func TestLaunchBatchValidationBeforeEffects(t *testing.T) {
 	}
 	cases = append(cases, huge)
 	for _, ls := range cases {
-		if out, err := p.Submit(t.Context(), ls); err == nil || len(out) != 0 {
+		if out, _, err := p.Submit(t.Context(), ls, provider.SubmitOptions{}); err == nil || len(out) != 0 {
 			t.Fatal(out, err)
 		}
 	}
@@ -100,7 +100,7 @@ func TestLaunchMaximumBatchAndIndependentDeclines(t *testing.T) {
 		ls[i] = assignment(fmt.Sprint(i))
 		ls[i].Capabilities = []string{"docker"}
 	}
-	out, err := p.Submit(t.Context(), ls)
+	out, _, err := p.Submit(t.Context(), ls, provider.SubmitOptions{})
 	if err != nil || len(out) != 100 {
 		t.Fatal(out, err)
 	}
@@ -119,7 +119,7 @@ func TestLaunchMaximumBatchAndIndependentDeclines(t *testing.T) {
 	ls[5].TimeoutSeconds = 1
 	ls[6].CPUMillis = 999999
 	before := copyLaunches(ls)
-	out, err = p.Submit(t.Context(), ls)
+	out, _, err = p.Submit(t.Context(), ls, provider.SubmitOptions{})
 	if err != nil || len(out) != len(ls) {
 		t.Fatal(out, err)
 	}
@@ -143,7 +143,7 @@ func TestLeaseExactDeliveryRedactionAndRequestedFacts(t *testing.T) {
 	p := structuredProvider(t, d)
 	p.env = map[string]string{"CUSTOM": "literal $HOME"}
 	l := assignment("lease")
-	out, err := p.Submit(t.Context(), []provider.Launch{l})
+	out, _, err := p.Submit(t.Context(), []provider.Launch{l}, provider.SubmitOptions{})
 	if err != nil || out[0].Status != provider.Accepted {
 		t.Fatal(out, err)
 	}
@@ -277,7 +277,7 @@ func TestCloseWaitsForCallsAndRetainsOwnership(t *testing.T) {
 	p := wrapNative(n)
 	result := make(chan error, 1)
 	go func() {
-		out, err := p.Submit(t.Context(), []provider.Launch{assignment("entered")})
+		out, _, err := p.Submit(t.Context(), []provider.Launch{assignment("entered")}, provider.SubmitOptions{})
 		if err == nil && (len(out) != 1 || out[0].Status != provider.Accepted) {
 			err = fmt.Errorf("unexpected result: %v", out)
 		}
@@ -310,7 +310,7 @@ func TestCloseWaitsForCallsAndRetainsOwnership(t *testing.T) {
 		t.Fatal("Close returned while call active")
 	default:
 	}
-	out, err := p.Submit(t.Context(), []provider.Launch{assignment("late")})
+	out, _, err := p.Submit(t.Context(), []provider.Launch{assignment("late")}, provider.SubmitOptions{})
 	if !errors.Is(err, errClosed) || len(out) != 1 || out[0].Status != provider.Unavailable {
 		t.Fatal(out, err)
 	}
@@ -359,7 +359,7 @@ func TestCanceledAdmissionGateDoesNotDispatch(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	out, err := p.Submit(ctx, []provider.Launch{assignment("canceled")})
+	out, _, err := p.Submit(ctx, []provider.Launch{assignment("canceled")}, provider.SubmitOptions{})
 	p.native.release()
 	if !errors.Is(err, context.Canceled) || len(out) != 0 || len(d.creates) != 0 {
 		t.Fatal(out, err)
@@ -368,7 +368,7 @@ func TestCanceledAdmissionGateDoesNotDispatch(t *testing.T) {
 func TestUnknownStartSurvivesClosure(t *testing.T) {
 	d := &daemon{containers: map[string]container{}, startError: true}
 	p := structuredProvider(t, d)
-	out, err := p.Submit(t.Context(), []provider.Launch{assignment("uncertain")})
+	out, _, err := p.Submit(t.Context(), []provider.Launch{assignment("uncertain")}, provider.SubmitOptions{})
 	if err != nil || len(out) != 1 || out[0].Status != provider.Unknown {
 		t.Fatal(out, err)
 	}

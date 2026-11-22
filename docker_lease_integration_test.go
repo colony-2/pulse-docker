@@ -221,7 +221,7 @@ func TestDockerLeaseIntegration(t *testing.T) {
 				}
 
 			})
-			results, submitErr := p.Submit(ctx, []provider.Launch{launch})
+			results, _, submitErr := p.Submit(ctx, []provider.Launch{launch}, provider.SubmitOptions{})
 			if submitErr != nil || len(results) != 1 || results[0].Status != provider.Accepted {
 				t.Fatal(results, submitErr)
 			}

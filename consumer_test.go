@@ -29,7 +29,7 @@ func Run(ctx context.Context, l provider.Launch) error {
  p,err:=docker.New(ctx,cfg);if err!=nil{return err};defer p.Close()
  var api provider.Provider=p
  _,err=api.GetCapabilities(ctx);if err!=nil{return err}
- _,err=api.Submit(ctx,[]provider.Launch{l});if err!=nil{return err}
+ _,_,err=api.Submit(ctx,[]provider.Launch{l},provider.SubmitOptions{});if err!=nil{return err}
  _,err=api.List(ctx,provider.ListRequest{});if err!=nil{return err}
  return p.Maintain(ctx)
 }

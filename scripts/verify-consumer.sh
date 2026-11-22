@@ -25,7 +25,7 @@ func use(ctx context.Context, launch provider.Launch) error {
  p,err:=docker.New(ctx,docker.Config{ExecutorEnv:map[string]string{"CUSTOM":"value"}})
  if err!=nil{return err};defer p.Close()
  var backend provider.Provider=p
- _,err=backend.Submit(ctx,[]provider.Launch{launch});if err!=nil{return err}
+ _,_,err=backend.Submit(ctx,[]provider.Launch{launch},provider.SubmitOptions{});if err!=nil{return err}
  return p.Maintain(ctx)
 }
 GO

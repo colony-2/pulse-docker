@@ -149,20 +149,20 @@ func nativeLaunch(l provider.Launch, platforms []string, env map[string]string) 
 
 // Submit validates the entire batch before worker effects. Decisions describe
 // admission; uncertain or missing results never authorize a retry or fallback.
-func (p *Provider) Submit(ctx context.Context, launches []provider.Launch) ([]provider.Submission, error) {
+func (p *Provider) Submit(ctx context.Context, launches []provider.Launch, _ provider.SubmitOptions) ([]provider.Submission, provider.LogSubscription, error) {
 	launches = copyLaunches(launches)
 	if err := providerutil.Launches(launches); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := p.enter(ctx); err != nil {
 		if !errors.Is(err, errClosed) {
-			return nil, err
+			return nil, nil, err
 		}
 		out := make([]provider.Submission, 0, len(launches))
 		for _, l := range launches {
 			out = append(out, provider.Submission{LaunchID: l.LaunchID, Status: provider.Unavailable, Reason: errClosed.Error()})
 		}
-		return out, err
+		return out, nil, err
 	}
 	defer p.leave()
 	out := make([]provider.Submission, 0, len(launches))
@@ -176,7 +176,7 @@ func (p *Provider) Submit(ctx context.Context, launches []provider.Launch) ([]pr
 		}
 	}
 	if len(native) == 0 {
-		return out, nil
+		return out, nil, nil
 	}
 	results, err := p.native.Submit(ctx, native)
 	if errors.Is(err, errClosed) {
@@ -187,7 +187,7 @@ func (p *Provider) Submit(ctx context.Context, launches []provider.Launch) ([]pr
 	for _, r := range results {
 		out = append(out, provider.Submission{LaunchID: r.LaunchID, Status: provider.Status(r.Status), Reason: r.Reason})
 	}
-	return out, err
+	return out, nil, err
 }
 func (p *Provider) List(ctx context.Context, q provider.ListRequest) (provider.ListResponse, error) {
 	if err := p.enter(ctx); err != nil {
