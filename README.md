@@ -32,11 +32,21 @@ closure and result handling, and [compatibility notes](docs/compatibility.md) fo
 existing workers, caches, serialized identities and uncertainty. The compiling
 [example](example_test.go) shows interface assignment, submission and maintenance.
 
-Go 1.26 is required. The shared API is pinned to
-`v0.0.0-20261120061856-2919f1ed5e42`. Submit with empty options for Docker execution. Production code imports only that API, private
-helpers, distribution/reference and go-digest. c2j and JobDB dependencies support
-the real executor and cache fixtures. Native process types are confined to the
-module's `internal/` boundary; no root API accepts arbitrary commands.
+Go 1.26 is required. The shared API and remote plugin SDK are pinned to
+`v0.0.0-20261121205737-bd1a5c559150` (baseline 3). Root imports, Config literals,
+constructors, worker/cache identities and lifecycle methods remain compatible.
+`NewWithOptions` adds optional binary output capture and retained API paging;
+ordinary `New` remains archive-free.
+
+Build the standalone program with `go build -o pulse-docker ./cmd/pulse-docker`.
+It provides server, setup, upgrade, status, images, launches/show and logs commands.
+Read the [command guide](docs/server-cli.md) for configuration, authentication,
+image refresh and recovery limits. `cli` exposes fresh commands for embedding.
+
+The root package is a thin facade; `internal/config`, `internal/provider`,
+`internal/engine`, `internal/launchlogs` and `internal/servercli` own their respective
+implementation and tests. Native process types remain private. The library imports
+neither the SDK nor Cobra; c2j/JobDB also support the real execution fixtures.
 
 Run `./scripts/verify.sh` for focused/full deterministic tests, race, vet, build,
 fixture compilation, module verification and tidy-diff. This is also the

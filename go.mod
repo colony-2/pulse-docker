@@ -3,11 +3,27 @@ module github.com/colony-2/pulse-docker
 go 1.26.0
 
 require (
+	github.com/cenkalti/backoff/v7 v7.0.3
 	github.com/colony-2/c2j v0.0.129-0.20261115173350-cd211e6aead8
 	github.com/colony-2/jobdb v0.0.86
-	github.com/colony-2/pulse-provider-api v0.0.0-20261120061856-2919f1ed5e42
+	github.com/colony-2/pulse-provider-api v0.0.0-20261121205737-bd1a5c559150
 	github.com/distribution/reference v0.6.0
 	github.com/opencontainers/go-digest v1.0.0
+	github.com/spf13/cobra v1.10.2
+	github.com/spf13/pflag v1.0.9
+)
+
+require (
+	github.com/fatih/color v1.13.0 // indirect
+	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/hashicorp/go-hclog v1.6.3 // indirect
+	github.com/hashicorp/go-plugin v1.8.0 // indirect
+	github.com/hashicorp/yamux v0.1.2 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
+	github.com/oklog/run v1.1.0 // indirect
+	golang.org/x/net v0.52.0 // indirect
+	google.golang.org/grpc v1.79.3 // indirect
 )
 
 require (
@@ -16,6 +32,7 @@ require (
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
+	github.com/colony-2/pulse-provider-api/plugin v0.0.0-20261121205737-bd1a5c559150
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fatih/structs v1.1.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect

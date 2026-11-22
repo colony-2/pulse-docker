@@ -11,3 +11,7 @@ The private selector matching and capability-name validation functions are
 adapted from c2j, https://github.com/colony-2/c2j,
 revision cd211e6aead8 (v0.0.129-0.20261115173350-cd211e6aead8), also licensed
 under the Apache License, Version 2.0.
+
+The remote session supervisor and transport option handling are adapted from
+pulse-macvz, https://github.com/colony-2/pulse-macvz,
+revision a1cfc8b9dc0e565118785b1fe496570371752217, under Apache License 2.0.

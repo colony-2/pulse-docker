@@ -10,4 +10,8 @@ Own deterministic contract/engine tests, Docker integration fixtures and tests, 
 
 Pulse owns discovery of work, placement, lease acquisition, controller policy, configuration files, and controller-facing diagnostics. c2j owns recipe execution and lease renewal; JobDB owns durable execution state. This cell does not build another scheduler or provision Docker hosts.
 
-The library provides the foundation for a future standalone remote Docker provider. First create this cell and implement the extracted library here; then Pulse removes its embedded Docker implementation and consumes this library. The implementation job makes the code available for consumption without a separate publication milestone. A runnable remote entry point, transport integration, deployment, and distribution need a separately agreed assignment. Tart/Orchard VM execution and the shared provider API/transport SDK remain with their existing owners.
+The library and standalone cmd/pulse-docker program share this implementation.
+The agreed remote-provider assignment includes SDK transport, local setup/image
+refresh, observational inspection, launch history and retained logs. Remote
+configuration cannot override local daemon access or capacity. Deployment,
+distribution, host provisioning and scheduling remain outside this cell's program.

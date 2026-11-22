@@ -43,6 +43,8 @@ func live(r io.Reader, mode string) error {
 	parents := []string{"TestDockerLifecycleResourcesIntegration", "TestDockerLeaseIntegration", "TestDockerDependencyCacheIntegration", "TestDockerNixFetchCacheIntegration", "TestDockerMultiPlatformIntegration", "TestDockerUpgradeIntegration"}
 	switch mode {
 	case "linux":
+	case "remote":
+		parents = []string{"TestDockerRemoteInboundLeaseIntegration", "TestDockerRemoteOutboundLeaseIntegration", "TestDockerFastCaptureIntegration", "TestDockerCaptureRestartIntegration", "TestDockerManagementIntegration"}
 	case "desktop":
 		parents = []string{"TestDockerDesktopIntegration"}
 	case "lease-completion":
@@ -68,7 +70,7 @@ func live(r io.Reader, mode string) error {
 		if err != nil {
 			return fmt.Errorf("invalid live event stream: %w", err)
 		}
-		if packageDone || e.Package != modulePath {
+		if packageDone || e.Package != modulePath+"/internal/provider" {
 			return fmt.Errorf("unexpected live event after completion or from another package")
 		}
 		if e.Action == "fail" || e.Action == "skip" {

@@ -22,8 +22,13 @@ func TestIndependentConsumerIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	consumer := `package host
-import("context";"time";docker "github.com/colony-2/pulse-docker";provider "github.com/colony-2/pulse-provider-api")
+import("context";"time";docker "github.com/colony-2/pulse-docker";"github.com/colony-2/pulse-docker/cli";provider "github.com/colony-2/pulse-provider-api")
 var _ provider.Provider=(*docker.Provider)(nil)
+var _ provider.ProviderWithLaunchLogs=(*docker.Provider)(nil)
+var _ = docker.Config{docker.CacheConfig{},"","","","",0,0,0,0,nil,nil}
+var _ = docker.NewWithOptions
+var _ = docker.Options{Logging:&docker.LoggingConfig{}}
+var _ = cli.NewCommand("consumer")
 func Run(ctx context.Context, l provider.Launch) error {
  cfg:=docker.Config{Socket:"",LockDir:"",ScratchPath:"/scratch",RegistryAuth:"",CPUMillis:1000,MemoryBytes:1<<30,Overhead:0,MaxContainers:2,ExecutorEnv:map[string]string{"CUSTOM":"value"},LegacyEndpoints:[]docker.LegacyEndpoint{{InstanceID:"db",TenantID:"tenant",Endpoint:"http://jobdb/tenant"}},DependencyCache:docker.CacheConfig{Disabled:false,Namespace:"test",Generation:"1",MaxAge:30*24*time.Hour}}
  p,err:=docker.New(ctx,cfg);if err!=nil{return err};defer p.Close()

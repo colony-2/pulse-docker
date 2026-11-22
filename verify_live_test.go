@@ -26,7 +26,7 @@ func verificationGo(t *testing.T) string {
 }
 
 func TestVerifyLiveResults(t *testing.T) {
-	const pkg = "github.com/colony-2/pulse-docker"
+	const pkg = "github.com/colony-2/pulse-docker/internal/provider"
 	parents := []string{"TestDockerLifecycleResourcesIntegration", "TestDockerLeaseIntegration", "TestDockerDependencyCacheIntegration", "TestDockerNixFetchCacheIntegration", "TestDockerMultiPlatformIntegration", "TestDockerUpgradeIntegration"}
 	event := func(action, name, output string) string {
 		b, _ := json.Marshal(map[string]string{"Action": action, "Package": pkg, "Test": name, "Output": output})

@@ -1,7 +1,7 @@
 # Docker library verification
 
 `./scripts/verify.sh` is the deterministic verification hook entry point. It
-runs a nonempty focused selection, the full deterministic suite and race suite,
+requires exact moved-package/test pairs and runs a nonempty focused selection, the full deterministic suite and race suite,
 vet, read-only production and fixture builds, tidy-diff, module verification and
 live-suite compilation and the deterministic persisted-failure and completed-lease
 fixture checks.
@@ -17,9 +17,10 @@ With c2j available, `c2j test run --file .c2/tests/verify-hook.test.json` exerci
 the recipe interface using a controlled command operation. It checks input
 validation, candidate forwarding as environment data and command-error
 propagation; the real deterministic suite still runs through `scripts/verify.sh`.
-The tagged integration check requires the persisted-failure
-regression and the completed-lease fixture check to be present and runs both
-without Docker while compiling the live suites. The latter uses real SQLite and
+The tagged integration check requires the persisted-failure regression,
+completed-lease fixture and remote removal-observation checks to be present and
+runs them without Docker while compiling the live suites. The completed-lease
+check uses real SQLite and
 the remote JobDB adapter to verify final-chapter completion and rejection of the
 exported completed lease. It does not execute live scenarios.
 
@@ -70,6 +71,9 @@ other Linux coverage. D29 Desktop acceptance was removed by human direction.
 The Linux suites need a reachable local Unix Docker daemon, Docker CLI, enough
 resources for the existing 6 GiB cache budget, registry access to
 `ghcr.io/colony-2/base2:latest` and Alpine, and Go/Git to build fixture binaries.
+For managed workers, request an `ubuntu*` execution base with the `docker`
+capability. This supplies Docker through the worker environment; adding a Nix
+Docker client package does not supply the required daemon.
 The runner must reach the fixture's published port, and containers must reach its
 peer address and the host gateway. The fixture handles runner/daemon filesystem
 separation with Docker copy and handles published-port reachability explicitly.
@@ -105,3 +109,32 @@ upgrade labels, layout-1/layout-2 caches, accounting, fingerprints, no replay an
 compatible pagination. A live extraction-upgrade check also needs running
 original-metadata workers/caches across close/reopen; deterministic fixtures alone
 do not certify that scenario.
+
+
+## Standalone remote acceptance
+
+`./scripts/verify-remote.sh` requires five additional real Docker suites in
+`internal/provider`: `TestDockerRemoteInboundLeaseIntegration`,
+`TestDockerRemoteOutboundLeaseIntegration`, `TestDockerFastCaptureIntegration`,
+`TestDockerCaptureRestartIntegration`, and `TestDockerManagementIntegration`.
+It rejects missing/skipped/failed cases and incomplete or contradictory JSON events,
+using the same strict checker as the Linux runner. A missing Docker CLI/daemon is
+failed/unrun acceptance, never a pass.
+
+The remote lease cases build the candidate executable, use independent SDK hosts,
+execute an isolated real supplied lease with heartbeat and unrelated queued work,
+and restart the server while its accepted container survives. Capture cases exercise
+fast binary output before auto-removal, retained reads after removal/reopening,
+verified-prefix restart and disclosure after downtime removal. Management checks
+observational CLI reads beside an active owner and explicit built-in image pulls.
+The fast-capture fixture observes actual Docker removal before reopening its
+archive. It allows asynchronous removal after output EOF, fails on an inventory
+error or a surviving worker, and records container state on failure. Fixture
+cleanup runs afterward and cannot satisfy the removal assertion. The inbound
+fixture supplies the SDK-required absolute initialization base directory.
+The deterministic transport fixtures separately exercise mTLS, mutual-key TLS/HTTP,
+wrong keys, correlated results, retained checkpoints and reconnect cleanup.
+
+The package move preserves fixture compilation and original serialized identities.
+An initializer-cancellation test now waits for the observed initializer start before
+canceling, so machine load cannot turn it into cancellation before reservation.

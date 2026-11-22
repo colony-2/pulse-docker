@@ -98,3 +98,41 @@ Ownership is local to a shared lock directory, not distributed coordination amon
 independent hosts. All owners of a daemon must use the same directory. Retaining
 that owner until calls finish prevents worker creation after relinquishing its
 budget.
+
+## Optional logs
+
+`New` remains archive-free. A requested listener on this constructor returns a
+completed source-unavailable subscription without changing admission. Nil listeners
+still return a nil subscription. Malformed listeners fail before worker effects.
+
+Use `NewWithOptions(ctx, cfg, Options{Logging: &LoggingConfig{Directory: absolutePath,
+Owner: "host", Compress: true}})` to capture independently of listeners. Retention
+defaults to seven days after capture closes and 1 GiB per daemon/owner. Keep all
+owners on the same admission lock directory; owner names partition archives only.
+The private archive contains worker output and requires authorized local readers.
+Configuration and history omit leases, executor environment and JobDB URLs.
+
+`Provider` also implements `ProviderWithLaunchLogs`. Disabled logging returns
+`ErrLaunchLogUnsupported`; absent/evicted output returns `ErrLaunchLogNotFound`;
+invalid checkpoints return `ErrLaunchLogCursor`. Every successful page has a
+checkpoint, including caught-up empty pages. Persist checkpoints for polling;
+changing page size preserves position. Returned records own their binary data.
+Capture finalization never establishes job completion.
+
+Capture attaches stdout/stderr before start using a separate connection from lease
+stdin. Records are at most 4096 bytes, committed before listeners can read them.
+Listeners have independent contexts, durations and Stop/Wait operations. Slow,
+panicking, blocked or overflowing listeners stop observation without changing
+accepted work. Capture is bounded to 128 streams, each with 64 queued records;
+32 resident callbacks each have a five-second deadline and 64 queued records.
+An uncooperative callback retains its slot until it returns.
+
+Provider closure interrupts active archives without finalizing them. Reopening
+uses native Docker timestamps and compares available output against the committed
+native byte prefix before appending. Native time/fingerprints are stored with replayed
+records; archive sequences remain independent of timestamps. It marks recovery incomplete because downtime/rotation cannot establish
+an exact native boundary. An unverifiable prefix stops that capture explicitly;
+removed workers become finalized/incomplete. Complete output from workers removed
+while the provider was down cannot be recovered. Disk errors or byte pressure can
+also cause early loss; compact history survives output eviction. Accepted containers
+are never stopped or recreated to repair observation.

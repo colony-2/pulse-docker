@@ -93,8 +93,14 @@ case "$1" in
      *-tags=integration*)
       if [ "$HARNESS_FAIL" = integration-selection ]; then echo 'controlled required failure' >&2; exit 26; fi
       echo TestDockerLeaseFailureEvidence
+      if [ "$HARNESS_FAIL" = removal-selection ]; then echo 'controlled required failure' >&2; else echo TestDockerRemoteFixtureRemovalObservation; fi
       if [ "$HARNESS_FAIL" = completion-selection ]; then echo 'controlled required failure' >&2; else echo TestDockerCompletedLeaseFixture; fi;;
-     *) echo TestConfigCopiesAndValidation;;
+     *)
+      required=$(printf '%s' "$*" | sed -n 's/.*-list \^\([^$]*\)\$.*/\1/p')
+      if [ "$HARNESS_FAIL" = since-selection ] && [ "$required" = TestLaunchesSinceDurationAndTimestamp ]; then echo 'controlled required failure' >&2; exit 0; fi
+      if [ "$HARNESS_FAIL" = transport-selection ] && [ "$required" = TestManagementValidatesTransportBeforeEffects ]; then echo 'controlled required failure' >&2; exit 0; fi
+      if [ "$HARNESS_FAIL" = partial-connection-selection ] && [ "$required" = TestManagementAllowsIncompleteConnectionSettings ]; then echo 'controlled required failure' >&2; exit 0; fi
+      if [ "$HARNESS_FAIL" = moved-selection ] && [ "$required" = TestLogsFastCaptureBeforeStartAndAfterRemoval ]; then echo 'controlled required failure' >&2; else echo "$required"; fi;;
     esac
     if [ "$HARNESS_FAIL" = selection ]; then echo 'controlled required failure' >&2; exit 24; fi; exit 0;;
    *) if [ "$HARNESS_FAIL" = test ]; then echo 'controlled required failure' >&2; exit 23; fi; exit 0;;
@@ -109,7 +115,7 @@ esac
 	for _, tc := range []struct {
 		name string
 		code int
-	}{{"test", 23}, {"selection", 24}, {"graph", 25}, {"integration-selection", 26}, {"completion-selection", 1}} {
+	}{{"test", 23}, {"selection", 24}, {"graph", 25}, {"integration-selection", 26}, {"completion-selection", 1}, {"removal-selection", 1}, {"moved-selection", 1}, {"since-selection", 1}, {"transport-selection", 1}, {"partial-connection-selection", 1}} {
 		t.Run(tc.name, func(t *testing.T) {
 			cmd := exec.CommandContext(t.Context(), "bash", "./scripts/verify.sh")
 			cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "HARNESS_FAIL="+tc.name)

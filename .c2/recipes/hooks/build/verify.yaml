@@ -21,7 +21,7 @@ sequence:
   op: command_execution
   const: true
   inputs:
-    timeout: 20m
+    timeout: 25m
     capture_diagnostics: always
     env:
       VERIFY_CANDIDATE: ${{ inputs.candidate }}
@@ -32,5 +32,5 @@ sequence:
 outputs:
   api_version: c2.build-hook/v1
   status: passed
-  summary: Deterministic tests, race, vet, builds, modules, consumer and live-result harnesses, failure evidence and completed-lease setup passed. Required live Docker acceptance needs separate evidence.
+  summary: Required moved-package selections, Docker CLI/archive/SDK tests including duration filters and pre-effect transport validation, race, vet, builds, modules, consumer and live-result harnesses, failure evidence, completed-lease setup and removal-observation checks passed. Linux and standalone remote live Docker acceptance require separate evidence.
   artifact_refs: ${{ sequence.deterministic.outputs.diagnostics }}

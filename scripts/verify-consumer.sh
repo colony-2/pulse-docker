@@ -18,9 +18,13 @@ package host
 import (
  "context"
  docker "github.com/colony-2/pulse-docker"
+ "github.com/colony-2/pulse-docker/cli"
  provider "github.com/colony-2/pulse-provider-api"
 )
 var _ provider.Provider = (*docker.Provider)(nil)
+var _ provider.ProviderWithLaunchLogs = (*docker.Provider)(nil)
+var _ = cli.NewCommand("consumer")
+var _ = docker.NewWithOptions
 func use(ctx context.Context, launch provider.Launch) error {
  p,err:=docker.New(ctx,docker.Config{ExecutorEnv:map[string]string{"CUSTOM":"value"}})
  if err!=nil{return err};defer p.Close()
