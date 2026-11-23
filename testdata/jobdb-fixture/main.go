@@ -58,17 +58,27 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	api := celltest.Handler(remote.NewServer(backend))
+	gitHandler := &cgi.Handler{Path: gitPath, Args: []string{"http-backend"}, Root: "/git", Env: []string{"GIT_PROJECT_ROOT=" + root, "GIT_HTTP_EXPORT_ALL=1"}}
+	log.Fatal(http.ListenAndServe(":8080", newFixtureHandler(api, gitHandler, hash)))
+}
+
+func newFixtureHandler(api, gitHandler http.Handler, hash string) http.Handler {
 	var claims, renewals, forbidden atomic.Int32
-	var dropImport, dropHeartbeat atomic.Bool
+	var dropImport, dropHeartbeat, holdGate atomic.Bool
 	gate, observed := make(chan struct{}), make(chan struct{})
 	var release, observe sync.Once
 	mux := http.NewServeMux()
-	mux.Handle("/git/", &cgi.Handler{Path: gitPath, Args: []string{"http-backend"}, Root: "/git", Env: []string{"GIT_PROJECT_ROOT=" + root, "GIT_HTTP_EXPORT_ALL=1"}})
+	mux.Handle("/git/", gitHandler)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "pulse-jobdb-fixture") })
 	mux.HandleFunc("GET /control/hash", func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, hash) })
 	mux.HandleFunc("GET /control/stats", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintf(w, `{"claims":%d,"renewals":%d,"forbidden":%d}`, claims.Load(), renewals.Load(), forbidden.Load())
 	})
+	// Recovery scenarios must keep the worker alive across controller loss.
+	// Ordinary lease scenarios retain automatic release after three renewals.
+	mux.HandleFunc("POST /control/hold-gate", func(w http.ResponseWriter, _ *http.Request) { holdGate.Store(true) })
+	mux.HandleFunc("POST /control/release-gate", func(w http.ResponseWriter, _ *http.Request) { release.Do(func() { close(gate) }) })
 	mux.HandleFunc("POST /control/observed", func(w http.ResponseWriter, _ *http.Request) { observe.Do(func() { close(observed) }) })
 	mux.HandleFunc("POST /control/drop-import", func(w http.ResponseWriter, _ *http.Request) { dropImport.Store(true) })
 	mux.HandleFunc("POST /control/drop-heartbeat", func(w http.ResponseWriter, _ *http.Request) { dropHeartbeat.Store(true) })
@@ -79,7 +89,6 @@ func main() {
 		}
 	})
 	mux.HandleFunc("/forbidden", func(w http.ResponseWriter, _ *http.Request) { forbidden.Add(1) })
-	api := celltest.Handler(remote.NewServer(backend))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/lease") || r.URL.Path == "/v1/jobs/poll" {
 			claims.Add(1)
@@ -101,12 +110,12 @@ func main() {
 				return
 			}
 			api.ServeHTTP(w, r)
-			if n >= 3 {
+			if n >= 3 && !holdGate.Load() {
 				release.Do(func() { close(gate) })
 			}
 			return
 		}
 		api.ServeHTTP(w, r)
 	})
-	log.Fatal(http.ListenAndServe(":8080", mux))
+	return mux
 }

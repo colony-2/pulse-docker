@@ -62,87 +62,99 @@ func nativeFrame(src byte, b []byte) []byte {
 	return append(header, b...)
 }
 func TestLogsFastCaptureBeforeStartAndAfterRemoval(t *testing.T) {
-	d := &daemon{containers: map[string]container{}}
-	started := make(chan struct{})
-	attached := make(chan struct{})
 	payload := []byte{0, 255, 128, 10}
-	var once sync.Once
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/attach") && r.URL.Query().Get("stdout") == "1" {
-			conn, rw, err := w.(http.Hijacker).Hijack()
+	for _, tc := range []struct {
+		name   string
+		frames [][]byte
+	}{
+		{"stdout first", [][]byte{nativeFrame(1, payload), nativeFrame(2, []byte("stderr"))}},
+		{"stderr first", [][]byte{nativeFrame(2, []byte("stderr")), nativeFrame(1, payload)}},
+		{"interleaved fragments", [][]byte{nativeFrame(2, []byte("std")), nativeFrame(1, payload[:2]), nativeFrame(2, []byte("err")), nativeFrame(1, payload[2:])}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := &daemon{containers: map[string]container{}}
+			started := make(chan struct{})
+			attached := make(chan struct{})
+			var once sync.Once
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/attach") && r.URL.Query().Get("stdout") == "1" {
+					conn, rw, err := w.(http.Hijacker).Hijack()
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					defer conn.Close()
+					rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n")
+					close(attached)
+					rw.Flush()
+					<-started
+					for _, frame := range tc.frames {
+						rw.Write(frame)
+					}
+					rw.Flush()
+					return
+				}
+				if strings.HasSuffix(r.URL.Path, "/start") {
+					select {
+					case <-attached:
+					default:
+						t.Error("start preceded output attachment")
+					}
+					once.Do(func() { close(started) })
+				}
+				d.serve(w, r)
+			}))
+			defer server.Close()
+			n, err := open(t.Context(), Config{DependencyCache: CacheConfig{Disabled: true}}, &engine{Base: server.URL, Client: server.Client()}, false)
 			if err != nil {
-				t.Error(err)
-				return
+				t.Fatal(err)
 			}
-			defer conn.Close()
-			rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n")
-			close(attached)
-			rw.Flush()
-			<-started
-			rw.Write(nativeFrame(1, payload))
-			rw.Write(nativeFrame(2, []byte("stderr")))
-			rw.Flush()
-			return
-		}
-		if strings.HasSuffix(r.URL.Path, "/start") {
-			select {
-			case <-attached:
-			default:
-				t.Error("start preceded output attachment")
+			p := wrapNative(n)
+			store := enableArchive(t, p)
+			l := assignment("fast")
+			out, sub, err := p.Submit(t.Context(), []api.Launch{l}, api.SubmitOptions{})
+			if err != nil || sub != nil || len(out) != 1 || out[0].Status != api.Accepted {
+				t.Fatal(out, sub, err)
 			}
-			once.Do(func() { close(started) })
-		}
-		d.serve(w, r)
-	}))
-	defer server.Close()
-	n, err := open(t.Context(), Config{DependencyCache: CacheConfig{Disabled: true}}, &engine{Base: server.URL, Client: server.Client()}, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	p := wrapNative(n)
-	store := enableArchive(t, p)
-	l := assignment("fast")
-	out, sub, err := p.Submit(t.Context(), []api.Launch{l}, api.SubmitOptions{})
-	if err != nil || sub != nil || len(out) != 1 || out[0].Status != api.Accepted {
-		t.Fatal(out, sub, err)
-	}
-	deadline := time.Now().Add(time.Second)
-	var page api.LaunchLogResponse
-	for {
-		page, err = store.GetLaunchLog(t.Context(), api.LaunchLogRequest{LaunchID: "fast"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if page.Finalized {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("capture did not close")
-		}
-		time.Sleep(time.Millisecond)
-	}
-	d.mu.Lock()
-	delete(d.containers, "fast")
-	d.mu.Unlock()
-	var stdout, stderr []byte
-	for _, r := range page.Records {
-		if bytes.Contains(r.Data, []byte(l.Lease)) {
-			t.Fatal("lease archived")
-		}
-		switch r.Source {
-		case api.LogSourceStdout:
-			stdout = append(stdout, r.Data...)
-		case api.LogSourceStderr:
-			stderr = append(stderr, r.Data...)
-		}
-	}
-	if page.Incomplete || !bytes.Equal(stdout, payload) || string(stderr) != "stderr" {
-		t.Fatal(page, stdout, stderr)
-	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.stdin["fast"] != string(l.Lease) {
-		t.Fatal("lease delivery changed")
+			deadline := time.Now().Add(time.Second)
+			var page api.LaunchLogResponse
+			for {
+				page, err = store.GetLaunchLog(t.Context(), api.LaunchLogRequest{LaunchID: "fast"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if page.Finalized {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("capture did not close")
+				}
+				time.Sleep(time.Millisecond)
+			}
+			d.mu.Lock()
+			delete(d.containers, "fast")
+			d.mu.Unlock()
+			var stdout, stderr []byte
+			for _, r := range page.Records {
+				if bytes.Contains(r.Data, []byte(l.Lease)) {
+					t.Fatal("lease archived")
+				}
+				switch r.Source {
+				case api.LogSourceStdout:
+					stdout = append(stdout, r.Data...)
+				case api.LogSourceStderr:
+					stderr = append(stderr, r.Data...)
+				}
+			}
+			if page.Incomplete || !bytes.Equal(stdout, payload) || string(stderr) != "stderr" {
+				t.Fatal(page, stdout, stderr)
+			}
+			d.mu.Lock()
+			defer d.mu.Unlock()
+			if d.stdin["fast"] != string(l.Lease) {
+				t.Fatal("lease delivery changed")
+			}
+		})
 	}
 }
 func TestLogsCaptureFailurePreservesLeaseAdmission(t *testing.T) {

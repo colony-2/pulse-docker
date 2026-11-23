@@ -47,6 +47,17 @@ func TestVerifyLiveResults(t *testing.T) {
 	safe := stream("unavailable_emulation_declines")
 	verified := stream("verified_emulation")
 	lease := event("start", "", "") + event("run", parents[1], "") + event("run", parents[1]+"/completed_lease", "") + event("pass", parents[1]+"/completed_lease", "") + event("pass", parents[1], "") + event("pass", "", "")
+	cliParent := "TestDockerCLIIntegration"
+	cliEvents := event("start", "", "") + event("run", cliParent, "")
+	for _, scenario := range []string{"outbound_restart", "inbound_parent_loss"} {
+		cliEvents += event("run", cliParent+"/"+scenario, "") + event("pass", cliParent+"/"+scenario, "")
+	}
+	cliEvents += event("run", cliParent+"/invalid_leases", "")
+	for _, invalid := range []string{"expired", "completed"} {
+		cliEvents += event("run", cliParent+"/invalid_leases/"+invalid, "") + event("pass", cliParent+"/invalid_leases/"+invalid, "")
+	}
+	cliEvents += event("pass", cliParent+"/invalid_leases", "")
+	cliEvents += event("pass", cliParent, "") + event("pass", "", "")
 	for _, tc := range []struct {
 		name, mode, data, want     string
 		exit, testExit, dockerExit int
@@ -66,6 +77,12 @@ func TestVerifyLiveResults(t *testing.T) {
 		{name: "empty selection", mode: "linux", data: safe, missingList: true, exit: 1},
 		{name: "native failure", mode: "linux", data: safe, testExit: 17, exit: 17},
 		{name: "daemon unavailable", mode: "linux", data: safe, dockerExit: 19, exit: 19},
+		{name: "CLI recovery", mode: "cli", data: cliEvents},
+		{name: "CLI parent only", mode: "cli", data: event("start", "", "") + event("run", cliParent, "") + event("pass", cliParent, "") + event("pass", "", ""), exit: 2},
+		{name: "CLI missing invalid lease", mode: "cli", data: strings.ReplaceAll(strings.ReplaceAll(cliEvents, event("run", cliParent+"/invalid_leases/expired", ""), ""), event("pass", cliParent+"/invalid_leases/expired", ""), ""), exit: 2},
+		{name: "CLI missing parent loss", mode: "cli", data: strings.ReplaceAll(strings.ReplaceAll(cliEvents, event("run", cliParent+"/inbound_parent_loss", ""), ""), event("pass", cliParent+"/inbound_parent_loss", ""), ""), exit: 2},
+		{name: "CLI skipped", mode: "cli", data: strings.Replace(cliEvents, event("pass", cliParent+"/outbound_restart", ""), event("skip", cliParent+"/outbound_restart", ""), 1), exit: 2},
+		{name: "CLI native failure", mode: "cli", data: cliEvents, testExit: 17, exit: 17},
 		{name: "completed lease", mode: "lease-completion", data: lease, want: "lease-completion scope"},
 		{name: "missing completed lease", mode: "lease-completion", data: event("start", "", "") + event("run", parents[1], "") + event("pass", parents[1], "") + event("pass", "", ""), exit: 2},
 	} {
@@ -74,6 +91,9 @@ func TestVerifyLiveResults(t *testing.T) {
 			names := strings.Join(parents, "\n") + "\n"
 			if tc.mode == "lease-completion" {
 				names = parents[1] + "\n"
+			}
+			if tc.mode == "cli" {
+				names = cliParent + "\n"
 			}
 			if tc.missingList {
 				names = ""

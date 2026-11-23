@@ -218,12 +218,18 @@ func TestDockerFastCaptureIntegration(t *testing.T) {
 	}
 	containerID := history[0].ContainerID
 	page := waitFinalLog(t, ctx, p, id)
-	var raw []byte
+	// Docker multiplexes independent pipes; their frame order can differ from
+	// the shell's write order. Require byte fidelity and labels within each stream.
+	streams := map[api.LogSource][]byte{}
 	for _, r := range page.Records {
-		raw = append(raw, r.Data...)
+		streams[r.Source] = append(streams[r.Source], r.Data...)
 	}
-	if string(raw) != string([]byte{0, 255})+"faststderr" || page.Incomplete {
-		t.Fatal("fast output changed", raw, page)
+	want := map[api.LogSource][]byte{
+		api.LogSourceStdout: append([]byte{0, 255}, []byte("fast")...),
+		api.LogSourceStderr: []byte("stderr"),
+	}
+	if !reflect.DeepEqual(streams, want) || !page.Finalized || page.Incomplete {
+		t.Fatal("fast output changed", streams, page)
 	}
 	// Output EOF and Docker's asynchronous AutoRemove do not complete atomically.
 	// Require actual disappearance before reopening the archive, without removing

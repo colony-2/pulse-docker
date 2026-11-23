@@ -4,10 +4,20 @@
 requires exact moved-package/test pairs and runs a nonempty focused selection, the full deterministic suite and race suite,
 vet, read-only production and fixture builds, tidy-diff, module verification and
 live-suite compilation and the deterministic persisted-failure and completed-lease
-fixture checks.
+fixture checks. The JobDB fixture HTTP gate controls are tested explicitly with
+`go test -race ./testdata/jobdb-fixture`, because `./...` excludes testdata.
 The full suite also compiles a fresh external consumer,
 checks its module graph and inspects the exported API. This early consumer uses a
 scratch replacement; it is not resulting-reference evidence.
+
+The managed hook requests only `base: ubuntu*` and `capabilities: [docker]`.
+It declares no CPU, core or memory requirement. Source-YAML and parsed-metadata
+regressions reject unsupported placement keys, including nested overrides.
+Go and the previously approved GCC package provide the deterministic build tools.
+The hook requires four sequential commands: deterministic verification (25 minutes),
+CLI recovery, standalone remote acceptance and Linux acceptance (65 minutes each).
+Each command captures diagnostics and propagates failure; the hook returns passed
+only after every required command succeeds.
 
 The failed-command harness substitutes a controlled Go command and proves that a
 required failure propagates unchanged through the hook entry point, without a
@@ -15,8 +25,9 @@ success report. `TestVerifyHookInputContract` also parses the actual hook and
 checks its typed build-runner inputs, artifact bindings and standalone defaults.
 With c2j available, `c2j test run --file .c2/tests/verify-hook.test.json` exercises
 the recipe interface using a controlled command operation. It checks input
-validation, candidate forwarding as environment data and command-error
-propagation; the real deterministic suite still runs through `scripts/verify.sh`.
+validation, candidate forwarding as environment data, diagnostic aggregation and
+command-error propagation for all required operations; the real deterministic
+suite still runs through `scripts/verify.sh`.
 The tagged integration check requires the persisted-failure regression,
 completed-lease fixture and remote removal-observation checks to be present and
 runs them without Docker while compiling the live suites. The completed-lease
@@ -111,6 +122,19 @@ original-metadata workers/caches across close/reopen; deterministic fixtures alo
 do not certify that scenario.
 
 
+## Standalone CLI recovery acceptance
+
+`./scripts/verify-live.sh cli` builds the current executable and runs
+`TestDockerCLIIntegration` in `internal/provider`. It requires explicit passing
+results for outbound disconnect/reconnect and process restart, inbound SDK parent
+loss and recovery, and expired/completed supplied leases. These fixtures preserve
+worker identity, heartbeat, exact claims and durable JobDB results, reject a
+competing daemon owner and leave unrelated queued work untouched. Invalid leases
+must not execute the recipe. The test uses the current `--cache-disabled` flag,
+explicit owner identities and private log directories; it preserves upstream's
+retained log implementation and current SDK/API pin. Missing Docker prerequisites
+fail acceptance. This supplements the five upstream remote suites below.
+
 ## Standalone remote acceptance
 
 `./scripts/verify-remote.sh` requires five additional real Docker suites in
@@ -127,7 +151,10 @@ and restart the server while its accepted container survives. Capture cases exer
 fast binary output before auto-removal, retained reads after removal/reopening,
 verified-prefix restart and disclosure after downtime removal. Management checks
 observational CLI reads beside an active owner and explicit built-in image pulls.
-The fast-capture fixture observes actual Docker removal before reopening its
+The fast-capture fixture requires exact binary bytes and correct labels within
+each stream, without assuming stdout precedes stderr. Deterministic capture cases
+cover both frame orders and interleaved fragments. The live fixture observes
+actual Docker removal before reopening its
 archive. It allows asynchronous removal after output EOF, fails on an inventory
 error or a surviving worker, and records container state on failure. Fixture
 cleanup runs afterward and cannot satisfy the removal assertion. The inbound

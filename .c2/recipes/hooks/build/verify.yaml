@@ -1,4 +1,7 @@
 id: pulse-docker-verify
+execution_needs:
+  base: ubuntu*
+  capabilities: [docker]
 input_schema:
   api_version: {type: string, default_value: c2.build-hook/v1}
   request: {type: string, default_value: ''}
@@ -29,8 +32,41 @@ sequence:
       GOTOOLCHAIN: local
       CGO_ENABLED: '1'
     run: ./scripts/verify.sh
+- id: live-cli
+  op: command_execution
+  const: true
+  inputs:
+    timeout: 65m
+    capture_diagnostics: always
+    env:
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      GOWORK: 'off'
+      GOTOOLCHAIN: local
+    run: ./scripts/verify-live.sh cli
+- id: live-remote
+  op: command_execution
+  const: true
+  inputs:
+    timeout: 65m
+    capture_diagnostics: always
+    env:
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      GOWORK: 'off'
+      GOTOOLCHAIN: local
+    run: ./scripts/verify-live.sh remote
+- id: live-linux
+  op: command_execution
+  const: true
+  inputs:
+    timeout: 65m
+    capture_diagnostics: always
+    env:
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      GOWORK: 'off'
+      GOTOOLCHAIN: local
+    run: ./scripts/verify-live.sh linux
 outputs:
   api_version: c2.build-hook/v1
   status: passed
-  summary: Required moved-package selections, Docker CLI/archive/SDK tests including duration filters and pre-effect transport validation, race, vet, builds, modules, consumer and live-result harnesses, failure evidence, completed-lease setup and removal-observation checks passed. Linux and standalone remote live Docker acceptance require separate evidence.
-  artifact_refs: ${{ sequence.deterministic.outputs.diagnostics }}
+  summary: Deterministic verification including fixture gate controls and binary fidelity within stdout and stderr, all three CLI recovery scenarios, all five standalone remote suites and all six required Linux Docker suites passed. Execution logs include candidate and environment identities and live test events.
+  artifact_refs: ${{ jq([sequence.deterministic.outputs.?diagnostics.orValue({}), sequence['live-cli'].outputs.?diagnostics.orValue({}), sequence['live-remote'].outputs.?diagnostics.orValue({}), sequence['live-linux'].outputs.?diagnostics.orValue({})], 'add') }}

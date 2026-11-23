@@ -496,11 +496,19 @@ func TestColdCacheCreationBeyondThirtySeconds(t *testing.T) {
 }
 
 func TestCacheInitializerCancellationCleansUpAndAllowsRetry(t *testing.T) {
-	d := &daemon{containers: map[string]container{}, initRunning: true}
+	started := make(chan struct{})
+	d := &daemon{containers: map[string]container{}, initRunning: true, initStarted: started}
 	p, s := testProvider(t, d)
 	defer s.Close()
-	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
+	go func() {
+		select {
+		case <-started:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 	out, _ := p.Submit(ctx, []compute.Launch{cachedLaunch("canceled")})
 	if len(out) != 1 || out[0].Status != compute.Unavailable {
 		t.Fatal(out)

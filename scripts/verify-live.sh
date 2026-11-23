@@ -4,6 +4,7 @@ export GOWORK=off GOTOOLCHAIN=local
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 required_pass=''
 case "${1:-}" in
+ cli) tests='^TestDockerCLIIntegration$'; expected=1;;
  linux) tests='^TestDocker(LifecycleResources|Lease|DependencyCache|NixFetchCache|MultiPlatform|Upgrade)Integration$'; expected=6;;
  remote) tests='^TestDocker(RemoteInboundLease|RemoteOutboundLease|FastCapture|CaptureRestart|Management)Integration$'; expected=5;;
  desktop) tests='^TestDockerDesktopIntegration$'; expected=1;;
@@ -11,7 +12,7 @@ case "${1:-}" in
   tests='^TestDockerLeaseIntegration$/^completed_lease$'
   required_pass='TestDockerLeaseIntegration/completed_lease'
   expected=1;;
- *) echo 'Usage: scripts/verify-live.sh linux|desktop|lease-completion|remote' >&2; exit 2;;
+ *) echo 'Usage: scripts/verify-live.sh linux|desktop|lease-completion|remote|cli' >&2; exit 2;;
 esac
 selection_pattern=$tests
 if [ -n "$required_pass" ]; then selection_pattern='^TestDockerLeaseIntegration$'; fi

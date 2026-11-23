@@ -6,6 +6,7 @@ go version
 # A typo in a required selection must not silently pass with no tests.
 focused='^Test(Config|ResolveSocket|Launch|Lease|Capabilities|Close|CanceledAdmission|UnknownStart|Upgrade|ConstructionFailure|Verify)'
 # Required package/test pairs protect the move and the new remote surface.
+# Fast-capture cases verify binary bytes per stream for both frame orders and interleaving.
 while read -r package required; do
   selection=$(go test -mod=readonly -list "^${required}$" "$package")
   printf '%s\n' "$selection" | awk -v required="$required" '$0 == required {found=1} END {exit !found}'
@@ -41,12 +42,16 @@ go build -mod=readonly ./...
 go build -mod=readonly ./testdata/cache-worker ./testdata/jobdb-fixture ./testdata/nix-fetch-fixture
 go mod tidy -diff
 go mod verify
+# Testdata packages are excluded by ./...; exercise the real fixture HTTP controls.
+go test -mod=readonly -race -count=1 -timeout=1m ./testdata/jobdb-fixture
 # Compile live suites and exercise their failure evidence and lease setup without Docker.
 integration_tests='^TestDocker(LeaseFailureEvidence|CompletedLeaseFixture|RemoteFixtureRemovalObservation)$'
 integration_selection=$(go test -mod=readonly -tags=integration -list "$integration_tests" ./internal/provider)
 for required in TestDockerLeaseFailureEvidence TestDockerCompletedLeaseFixture TestDockerRemoteFixtureRemovalObservation; do
   printf '%s\n' "$integration_selection" | awk -v required="$required" '$0 == required { found=1 } END { exit !found }'
 done
+cli_selection=$(go test -mod=readonly -tags=integration -list '^TestDockerCLIIntegration$' ./internal/provider)
+printf '%s\n' "$cli_selection" | awk '$0 == "TestDockerCLIIntegration" { found=1 } END { exit !found }'
 go test -mod=readonly -tags=integration -run "$integration_tests" ./...
 # Verify the complete test/fixture graph, not just production imports.
 graph=$(go list -mod=readonly -m all)

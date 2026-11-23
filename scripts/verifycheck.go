@@ -42,6 +42,8 @@ func fail(err error) { fmt.Fprintln(os.Stderr, err); os.Exit(2) }
 func live(r io.Reader, mode string) error {
 	parents := []string{"TestDockerLifecycleResourcesIntegration", "TestDockerLeaseIntegration", "TestDockerDependencyCacheIntegration", "TestDockerNixFetchCacheIntegration", "TestDockerMultiPlatformIntegration", "TestDockerUpgradeIntegration"}
 	switch mode {
+	case "cli":
+		parents = []string{"TestDockerCLIIntegration"}
 	case "linux":
 	case "remote":
 		parents = []string{"TestDockerRemoteInboundLeaseIntegration", "TestDockerRemoteOutboundLeaseIntegration", "TestDockerFastCaptureIntegration", "TestDockerCaptureRestartIntegration", "TestDockerManagementIntegration"}
@@ -157,6 +159,13 @@ func live(r io.Reader, mode string) error {
 	}
 	if mode == "lease-completion" && !ended[parents[0]+"/completed_lease"] {
 		return fmt.Errorf("required completed-lease subtest did not pass")
+	}
+	if mode == "cli" {
+		for _, scenario := range []string{"outbound_restart", "inbound_parent_loss", "invalid_leases", "invalid_leases/expired", "invalid_leases/completed"} {
+			if !ended[parents[0]+"/"+scenario] {
+				return fmt.Errorf("required CLI scenario did not pass: %s", scenario)
+			}
+		}
 	}
 	if mode == "linux" {
 		if branch == "" || native == "" || native == alternative {
