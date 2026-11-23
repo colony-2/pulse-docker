@@ -86,11 +86,31 @@ func launches(ctx context.Context, o serverOptions, args []string) error {
 		return outputJSON(o.out, out)
 	}
 	table := tabwriter.NewWriter(o.out, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(table, "SUBMITTED\tTENANT\tJOB\tADMISSION\tCAPTURE\tLAUNCH")
+	fmt.Fprintln(table, "SUBMITTED\tTENANT\tJOB\tADMISSION\tCAPTURE\tPROCESS\tEXIT\tOOM\tREASON\tLAUNCH")
 	for _, h := range out {
-		fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\n", h.SubmittedAt.Format(time.RFC3339), h.TenantID, h.JobID, h.Admission, h.Capture, h.LaunchID)
+		state, exit, oom, reason := h.Process.Display()
+		capture := h.Capture
+		if h.Incomplete && capture != "expired" {
+			capture += " (incomplete)"
+		}
+		fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", h.SubmittedAt.Format(time.RFC3339), h.TenantID, h.JobID, h.Admission, capture, state, exit, oom, reason, h.LaunchID)
 	}
-	return table.Flush()
+	if err := table.Flush(); err != nil {
+		return err
+	}
+	if len(args) > 0 {
+		if p := out[0].Process; p != nil {
+			fmt.Fprintf(o.out, "Process observed at %s", p.ObservedAt.Format(time.RFC3339Nano))
+			if p.Source != "" {
+				fmt.Fprintf(o.out, " (%s)", p.Source)
+			}
+			fmt.Fprintln(o.out)
+		}
+		if gaps := out[0].GapReasons; len(gaps) != 0 {
+			fmt.Fprintf(o.out, "Capture gaps: %v\n", gaps)
+		}
+	}
+	return nil
 }
 func logs(ctx context.Context, o serverOptions, args []string) error {
 	if len(args) > 0 {
@@ -124,7 +144,7 @@ func logs(ctx context.Context, o serverOptions, args []string) error {
 				continue
 			}
 			end := consumed + uint64(len(r.Data))
-			if end > o.offset {
+			if end > o.offset && (o.stream == "" || o.stream == "all" || o.stream == string(r.Source)) {
 				start := uint64(0)
 				if o.offset > consumed {
 					start = o.offset - consumed

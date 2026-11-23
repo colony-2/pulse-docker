@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	api "github.com/colony-2/pulse-provider-api"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
+
+	api "github.com/colony-2/pulse-provider-api"
 )
 
 func archiveFixture(t *testing.T) (*Store, Config) {
@@ -22,6 +24,220 @@ func archiveFixture(t *testing.T) (*Store, Config) {
 		t.Fatal(err)
 	}
 	return s, c
+}
+
+func TestArchiveTerminalResetValidatesCommittedTail(t *testing.T) {
+	store, _ := archiveFixture(t)
+	const id = "one"
+	if err := store.Append(id, api.LogSourceStderr, []byte("original")); err != nil {
+		t.Fatal(err)
+	}
+	m, err := store.loadID(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(store.root, key(id), m.Segments[0].Name)
+	committed, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	corrupt := bytes.Clone(committed)
+	corrupt[len(corrupt)-1] ^= 1
+	if err := os.WriteFile(path, corrupt, 0600); err != nil {
+		t.Fatal(err)
+	}
+	store.fail(id, ErrStorage)
+	if err := store.Gap(id, "storage_unavailable"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ResetAppend(id); !errors.Is(err, ErrStorage) {
+		t.Fatal("reset accepted corrupt committed frame", err)
+	}
+	if err := store.Complete(id); !errors.Is(err, ErrStorage) {
+		t.Fatal("completion accepted corrupt committed frame", err)
+	}
+	if err := store.Append(id, api.LogSourceStderr, []byte("must not append")); !errors.Is(err, ErrStorage) {
+		t.Fatal("append failure latch was lost", err)
+	}
+	if err := os.WriteFile(path, append(bytes.Clone(committed), []byte("uncommitted tail")...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ResetAppend(id); err != nil {
+		t.Fatal(err)
+	}
+	if restored, err := os.ReadFile(path); err != nil || !bytes.Equal(restored, committed) {
+		t.Fatal("validated reset did not truncate only the uncommitted tail", err)
+	}
+	if err := store.Append(id, api.LogSourceStderr, []byte("recovered")); err != nil {
+		t.Fatal(err)
+	}
+	page, err := store.GetLaunchLog(t.Context(), api.LaunchLogRequest{LaunchID: id})
+	obs, obsErr := store.Observation(id)
+	if err != nil || obsErr != nil || page.Finalized || !page.Incomplete || !slices.Contains(obs.History.GapReasons, "storage_unavailable") || len(page.Records) != 2 || string(page.Records[0].Data) != "original" || string(page.Records[1].Data) != "recovered" || page.Records[1].Sequence != page.Records[0].Sequence+1 {
+		t.Fatal(page, err, obs, obsErr)
+	}
+}
+
+func TestArchiveTerminalMissingMetadataPreservesDurableEvidence(t *testing.T) {
+	for _, evidence := range []string{"00000000000000000001.records", "attempt-1234567890abcdef1234567890abcdef.json"} {
+		t.Run(evidence, func(t *testing.T) {
+			store, config := archiveFixture(t)
+			dir := filepath.Join(store.root, key("one"))
+			path := filepath.Join(dir, evidence)
+			if err := os.WriteFile(path, []byte("durable evidence"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(filepath.Join(dir, "metadata.json")); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Open(config, "daemon"); !errors.Is(err, ErrStorage) {
+				t.Fatal("existing records were mistaken for interrupted first write", err)
+			}
+			if err := store.BeginRecovered(History{LaunchID: "one"}, "abcdef1234567890abcdef1234567890"); !errors.Is(err, ErrStorage) {
+				t.Fatal("recovery replaced a launch with durable evidence", err)
+			}
+			if preserved, err := os.ReadFile(path); err != nil || string(preserved) != "durable evidence" {
+				t.Fatal("durable evidence was modified", err)
+			}
+		})
+	}
+}
+
+func TestArchiveTerminalResetValidatesSealedTail(t *testing.T) {
+	store, _ := archiveFixture(t)
+	const id = "one"
+	if err := store.Append(id, api.LogSourceStderr, []byte("sealed")); err != nil {
+		t.Fatal(err)
+	}
+	meta, err := store.loadID(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.seal(&meta); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(store.root, key(id), meta.Segments[0].Name)
+	committed, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	corrupt := bytes.Clone(committed)
+	corrupt[len(corrupt)-1] ^= 1
+	if err := os.WriteFile(path, corrupt, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ResetAppend(id); !errors.Is(err, ErrStorage) {
+		t.Fatal("reset accepted corrupt gzip trailer", err)
+	}
+	if err := os.WriteFile(path, committed, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ResetAppend(id); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append(id, api.LogSourceStderr, []byte("next segment")); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, committed) {
+		t.Fatal("resumed append modified the sealed segment", err)
+	}
+	page, err := store.GetLaunchLog(t.Context(), api.LaunchLogRequest{LaunchID: id})
+	if err != nil || len(page.Records) != 2 || string(page.Records[0].Data) != "sealed" || string(page.Records[1].Data) != "next segment" || page.Records[1].Sequence != page.Records[0].Sequence+1 {
+		t.Fatal(page, err)
+	}
+}
+
+func TestArchiveTerminalCommitAndCompressionFailure(t *testing.T) {
+	store, config := archiveFixture(t)
+	exit := 7
+	if err := store.RecordProcess("one", Process{State: "exited", ExitCode: &exit, Source: "inspect", ObservedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append("one", api.LogSourceStderr, []byte("exact stderr")); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(store.root, key("one"))
+	meta, err := load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.stage(&meta, api.LogSourceLaunch, []byte("uncommitted terminal frame"), time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	store, err = Open(config, "daemon")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.GetLaunchLog(t.Context(), api.LaunchLogRequest{LaunchID: "one"})
+	if err != nil || before.Finalized || len(before.Records) != 1 {
+		t.Fatal(before, err)
+	}
+	if err = os.Mkdir(filepath.Join(dir, meta.Segments[0].Name+".gz"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.Complete("one"); err == nil {
+		t.Fatal("compression fault was not exercised")
+	}
+	store, err = Open(config, "daemon")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.Complete("one"); err != nil {
+		t.Fatal(err)
+	}
+	after, err := store.GetLaunchLog(t.Context(), api.LaunchLogRequest{LaunchID: "one", PageToken: before.NextPageToken})
+	if err != nil || !after.Finalized || !after.Incomplete || len(after.Records) != 1 || !bytes.Contains(after.Records[0].Data, []byte("code=7")) {
+		t.Fatal(after, err)
+	}
+	obs, err := store.DurableObservation("one")
+	if err != nil || !obs.Finalized || *obs.History.Process.ExitCode != exit {
+		t.Fatal(obs, err)
+	}
+}
+
+func TestArchiveTerminalReceiptSurvivesEviction(t *testing.T) {
+	store, _ := archiveFixture(t)
+	receipt := Receipt{Container: "container", Fingerprint: "fingerprint", Scope: "owner", Phase: "accepted"}
+	if err := store.RecordReceipt("one", receipt); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordProcess("one", Process{State: "unknown", Reason: "container_missing", ObservedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Complete("one"); err != nil {
+		t.Fatal(err)
+	}
+	store.cfg.MaxAge = time.Nanosecond
+	if err := store.Clean(); err != nil {
+		t.Fatal(err)
+	}
+	obs, err := store.DurableObservation("one")
+	if err != nil || obs.Receipt == nil || *obs.Receipt != receipt || !obs.Finalized || obs.History.Process.Reason != "container_missing" || obs.History.Capture != "expired" {
+		t.Fatal(obs, err)
+	}
+	if _, err := store.GetLaunchLog(t.Context(), api.LaunchLogRequest{LaunchID: "one"}); !errors.Is(err, api.ErrLaunchLogNotFound) {
+		t.Fatal(err)
+	}
+}
+
+func TestArchiveTerminalAdmissionConflictPreservesActiveLaunch(t *testing.T) {
+	store, _ := archiveFixture(t)
+	if err := store.RecordReceipt("one", Receipt{Phase: "accepted"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, status := range []string{"accepted", "accepted", "rejected", "unknown"} {
+		if err := store.RecordAdmission("one", status, status == "rejected", false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	obs, err := store.Observation("one")
+	if err != nil || obs.Finalized || obs.History.Admission != "accepted" {
+		t.Fatal(obs, err)
+	}
+	page, err := store.GetLaunchLog(t.Context(), api.LaunchLogRequest{LaunchID: "one"})
+	if err != nil || len(page.Records) != 1 || string(page.Records[0].Data) != "admission: accepted\n" {
+		t.Fatal(page, err)
+	}
 }
 func TestArchiveBinaryPagingReopen(t *testing.T) {
 	s, c := archiveFixture(t)
@@ -68,6 +284,49 @@ func TestArchiveBinaryPagingReopen(t *testing.T) {
 	m, _ := load(filepath.Join(s.root, key("one")))
 	if filepath.Ext(m.Segments[0].Name) != ".gz" {
 		t.Fatal("sealed archive not compressed")
+	}
+}
+
+func TestArchiveTerminalRetryRetention(t *testing.T) {
+	store, _ := archiveFixture(t)
+	if err := store.RecordAdmission("one", "rejected", true, false); err != nil {
+		t.Fatal(err)
+	}
+	request := api.LaunchLogRequest{LaunchID: "one"}
+	prior, err := store.GetLaunchLog(t.Context(), request)
+	if err != nil || !prior.Finalized {
+		t.Fatal(prior, err)
+	}
+	rejected, err := store.loadID("one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PrepareAttempt(History{LaunchID: "one", SubmittedAt: time.Now()}, Receipt{Phase: "uncertain"}); err != nil {
+		t.Fatal(err)
+	}
+	older, err := loadMetadata(filepath.Join(store.root, key("one")), snapshotName(rejected.Archive))
+	if err != nil {
+		t.Fatal(err)
+	}
+	older.ClosedAt = time.Now().Add(-2 * store.cfg.MaxAge)
+	if err := store.saveMetadata(older, snapshotName(older.Archive)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append("one", api.LogSourceStderr, []byte("retry stderr")); err != nil {
+		t.Fatal(err)
+	}
+	page, err := store.GetLaunchLog(t.Context(), request)
+	if err != nil || page.Finalized || len(page.Records) != 1 || string(page.Records[0].Data) != "retry stderr" {
+		t.Fatal(page, err)
+	}
+	request.PageToken = prior.NextPageToken
+	if _, err := store.GetLaunchLog(t.Context(), request); !errors.Is(err, api.ErrLaunchLogNotFound) {
+		t.Fatal("expired attempt cursor was not rejected", err)
+	}
+	for _, part := range older.Segments {
+		if _, err := os.Stat(filepath.Join(store.root, key("one"), part.Name)); !os.IsNotExist(err) {
+			t.Fatal("expired attempt segment not removed", part.Name, err)
+		}
 	}
 }
 func TestArchiveCursorCategoriesAndIsolation(t *testing.T) {

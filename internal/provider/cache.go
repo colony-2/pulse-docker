@@ -374,7 +374,7 @@ func (p *engineProvider) runCacheHelper(ctx context.Context, c dependencyCache, 
 	if err != nil {
 		return 0, err
 	}
-	if init == nil || init.ID != created.ID || !verifyCacheContainer(*init, c.Key) || !environmentContains(init.Config.Env, values) || init.HostConfig.AutoRemove || init.HostConfig.RestartPolicy.Name != "no" || init.HostConfig.NanoCPUs != cpu || init.HostConfig.Memory != memory || init.HostConfig.MemorySwap != memory {
+	if init == nil || init.ID != created.ID || !verifyCacheContainer(*init, c.Key) || !environmentContains(init.Config.Env, values) || (init.HostConfig.AutoRemove != nil && *init.HostConfig.AutoRemove) || init.HostConfig.RestartPolicy.Name != "no" || init.HostConfig.NanoCPUs != cpu || init.HostConfig.Memory != memory || init.HostConfig.MemorySwap != memory {
 		return 0, fmt.Errorf("cache initializer configuration differs")
 	}
 	stage = "start initializer"

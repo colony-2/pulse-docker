@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/colony-2/pulse-docker/internal/launchlogs"
 	"log/slog"
 	"net/url"
 	"os"
@@ -59,7 +60,7 @@ type nativePlan struct {
 	ImageEnv   []string
 }
 type hostConfig struct {
-	AutoRemove    bool  `json:"AutoRemove"`
+	AutoRemove    *bool `json:"AutoRemove"`
 	NanoCPUs      int64 `json:"NanoCpus"`
 	Memory        int64 `json:"Memory"`
 	MemorySwap    int64 `json:"MemorySwap"`
@@ -423,6 +424,11 @@ func (p *engineProvider) Submit(ctx context.Context, ls []compute.Launch) ([]com
 	for _, l := range ls {
 		r := compute.Submission{LaunchID: l.LaunchID}
 		hash := fingerprint(l)
+		var observation launchlogs.Observation
+		var observationErr error
+		if p.capture != nil {
+			observation, observationErr = p.capture.store.Observation(l.LaunchID)
+		}
 		if c, exists := found[l.LaunchID]; exists {
 			if c.Config.Labels["pulse_process_fingerprint"] != hash {
 				r.Status = compute.Rejected
@@ -437,6 +443,23 @@ func (p *engineProvider) Submit(ctx context.Context, ls []compute.Launch) ([]com
 			}
 			out = append(out, r)
 			continue
+		}
+		if p.capture != nil {
+			prior := observation.Receipt
+			switch {
+			case observationErr != nil && !os.IsNotExist(observationErr):
+				r.Status, r.Reason = compute.Unknown, "prior launch history could not be checked"
+			case prior != nil && prior.Fingerprint != hash:
+				r.Status, r.Reason = compute.Rejected, "launch ID conflict"
+			case prior != nil && prior.Phase == "accepted" && prior.Scope == p.capture.scope:
+				r.Status = compute.Accepted
+			case prior != nil:
+				r.Status, r.Reason = compute.Unknown, "previous Docker launch effect remains uncertain"
+			}
+			if r.Status != "" {
+				out = append(out, r)
+				continue
+			}
 		}
 		if _, uncertain := p.uncertain[l.LaunchID]; uncertain {
 			r.Status = compute.Unknown
@@ -490,6 +513,23 @@ func (p *engineProvider) Submit(ctx context.Context, ls []compute.Launch) ([]com
 		accounting, _ := json.Marshal(cost)
 		labels[accountingLabel] = string(accounting)
 		labels["pulse_process_fingerprint"] = hash
+		for _, key := range []string{retentionLabel, retentionScopeLabel, retentionArchiveLabel} {
+			delete(labels, key)
+		}
+		autoRemove := p.capture == nil
+		receipt := launchlogs.Receipt{Fingerprint: hash, Phase: "uncertain", Cleanup: "pending"}
+		if !autoRemove {
+			receipt.Scope = p.capture.scope
+			archive, archiveErr := p.capture.store.PrepareAttempt(launchlogs.History{
+				LaunchID: l.LaunchID, InstanceID: labels["pulse_jobdb_instance_id"], TenantID: labels["pulse_tenant_id"], JobID: labels["pulse_job_id"], SubmittedAt: time.Now().UTC(),
+			}, receipt)
+			p.capture.report(l.LaunchID, "", "receipt", archiveErr)
+			p.capture.report(l.LaunchID, "", "preparing", p.capture.store.Append(l.LaunchID, "launch", []byte("preparing Docker worker\n")))
+			if archive == "" {
+				archive = cacheHash([]string{receipt.Scope, l.LaunchID})[:32]
+			}
+			labels[retentionLabel], labels[retentionScopeLabel], labels[retentionArchiveLabel] = retentionMode, receipt.Scope, archive
+		}
 		labels[limitsLabel] = "enforced"
 		if p.unenforced {
 			labels[limitsLabel] = "disabled"
@@ -519,7 +559,7 @@ func (p *engineProvider) Submit(ctx context.Context, ls []compute.Launch) ([]com
 		if a.ScratchBytes > 0 {
 			tmpfs[p.cfg.ScratchPath] = fmt.Sprintf("rw,size=%d,mode=1777", a.ScratchBytes)
 		}
-		body := map[string]any{"Image": plan.ImageID, "Entrypoint": l.Process.Command, "Cmd": l.Process.Args, "OpenStdin": l.Process.Stdin != "", "StdinOnce": true, "AttachStdin": l.Process.Stdin != "", "Env": env, "Labels": labels, "WorkingDir": l.Process.WorkingDir, "HostConfig": map[string]any{"NanoCpus": cpu, "Memory": memory, "MemorySwap": memory, "RestartPolicy": map[string]any{"Name": "no"}, "AutoRemove": true, "Init": true, "Tmpfs": tmpfs, "LogConfig": map[string]any{"Type": "json-file", "Config": map[string]string{"max-size": "10m", "max-file": "3"}}}}
+		body := map[string]any{"Image": plan.ImageID, "Entrypoint": l.Process.Command, "Cmd": l.Process.Args, "OpenStdin": l.Process.Stdin != "", "StdinOnce": true, "AttachStdin": l.Process.Stdin != "", "Env": env, "Labels": labels, "WorkingDir": l.Process.WorkingDir, "HostConfig": map[string]any{"NanoCpus": cpu, "Memory": memory, "MemorySwap": memory, "RestartPolicy": map[string]any{"Name": "no"}, "AutoRemove": autoRemove, "Init": true, "Tmpfs": tmpfs, "LogConfig": map[string]any{"Type": "json-file", "Config": map[string]string{"max-size": "10m", "max-file": "3"}}}}
 		if cache != nil {
 			body["HostConfig"].(map[string]any)["Mounts"] = cache.mounts()
 		}
@@ -537,6 +577,10 @@ func (p *engineProvider) Submit(ctx context.Context, ls []compute.Launch) ([]com
 			var api *apiError
 			if errors.As(err, &api) && api.Code >= 400 && api.Code < 500 && api.Code != 409 {
 				delete(p.uncertain, l.LaunchID)
+				if p.capture != nil {
+					p.capture.report(l.LaunchID, "", "receipt", p.capture.store.ClearReceipt(l.LaunchID))
+					p.capture.report(l.LaunchID, "", "admission", p.capture.store.RecordAdmission(l.LaunchID, string(compute.Rejected), true, false))
+				}
 				used.CPU -= cost.CPU
 				used.Memory -= cost.Memory
 				used.Slots--
@@ -558,6 +602,10 @@ func (p *engineProvider) Submit(ctx context.Context, ls []compute.Launch) ([]com
 			out = append(out, r)
 			continue
 		}
+		receipt.Container = created.ID
+		if p.capture != nil {
+			p.capture.report(l.LaunchID, created.ID, "receipt", p.capture.store.RecordReceipt(l.LaunchID, receipt))
+		}
 		if len(created.Warnings) > 0 {
 			r.Status = compute.Unknown
 			r.Reason = "Docker create warnings require inspection; container not started"
@@ -565,9 +613,14 @@ func (p *engineProvider) Submit(ctx context.Context, ls []compute.Launch) ([]com
 			continue
 		}
 		var inspected container
-		if err = p.e.Call(ctx, "GET", "/containers/"+url.PathEscape(created.ID)+"/json", nil, &inspected); err != nil || !inspected.HostConfig.AutoRemove || inspected.HostConfig.NanoCPUs != cpu || inspected.HostConfig.Memory != memory || inspected.HostConfig.MemorySwap != memory || inspected.HostConfig.RestartPolicy.Name != "no" || inspected.HostConfig.Tmpfs[p.cfg.ScratchPath] != tmpfs[p.cfg.ScratchPath] {
+		if err = p.e.Call(ctx, "GET", "/containers/"+url.PathEscape(created.ID)+"/json", nil, &inspected); err != nil || inspected.HostConfig.AutoRemove == nil || *inspected.HostConfig.AutoRemove != autoRemove || inspected.HostConfig.NanoCPUs != cpu || inspected.HostConfig.Memory != memory || inspected.HostConfig.MemorySwap != memory || inspected.HostConfig.RestartPolicy.Name != "no" || inspected.HostConfig.Tmpfs[p.cfg.ScratchPath] != tmpfs[p.cfg.ScratchPath] {
 			r.Status = compute.Unknown
 			r.Reason = "Docker configuration verification failed; container not started"
+			out = append(out, r)
+			continue
+		}
+		if p.capture != nil && (inspected.ID != created.ID || !p.capture.owned(inspected.Config.Labels) || inspected.Config.Labels[retentionArchiveLabel] != labels[retentionArchiveLabel] || inspected.Config.Labels["pulse_launch_id"] != l.LaunchID || inspected.Config.Labels["pulse_process_fingerprint"] != hash) {
+			r.Status, r.Reason = compute.Unknown, "Docker retention verification failed; container not started"
 			out = append(out, r)
 			continue
 		}
@@ -578,7 +631,7 @@ func (p *engineProvider) Submit(ctx context.Context, ls []compute.Launch) ([]com
 		}
 		if p.capture != nil {
 			p.capture.warn(p.capture.store.Observe(l.LaunchID, created.ID, "", plan.ImageID))
-			p.capture.start(p.e, l.LaunchID, created.ID, false)
+			p.capture.start(p, l.LaunchID, created.ID, false, false)
 		}
 		if err = p.e.Start(ctx, created.ID, l.Process.Stdin); err != nil {
 			r.Status = compute.Unknown
@@ -586,6 +639,13 @@ func (p *engineProvider) Submit(ctx context.Context, ls []compute.Launch) ([]com
 		} else {
 			delete(p.uncertain, l.LaunchID)
 			r.Status = compute.Accepted
+		}
+		if p.capture != nil {
+			if err == nil {
+				receipt.Phase = "accepted"
+				p.capture.report(l.LaunchID, created.ID, "receipt", p.capture.store.RecordReceipt(l.LaunchID, receipt))
+			}
+			p.capture.started(l.LaunchID, err == nil)
 		}
 		out = append(out, r)
 	}

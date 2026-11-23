@@ -68,5 +68,5 @@ sequence:
 outputs:
   api_version: c2.build-hook/v1
   status: passed
-  summary: Deterministic verification including fixture gate controls and binary fidelity within stdout and stderr, all three CLI recovery scenarios, all five standalone remote suites and all six required Linux Docker suites passed. Execution logs include candidate and environment identities and live test events.
+  summary: Deterministic log recovery and CLI verification (including expiry receipt safeguards and capture closure after storage restoration), all three CLI recovery scenarios, all five remote suites, and all six required Linux Docker suites passed. Execution logs identify the candidate and environment.
   artifact_refs: ${{ jq([sequence.deterministic.outputs.?diagnostics.orValue({}), sequence['live-cli'].outputs.?diagnostics.orValue({}), sequence['live-remote'].outputs.?diagnostics.orValue({}), sequence['live-linux'].outputs.?diagnostics.orValue({})], 'add') }}

@@ -117,7 +117,10 @@ Configuration and history omit leases, executor environment and JobDB URLs.
 invalid checkpoints return `ErrLaunchLogCursor`. Every successful page has a
 checkpoint, including caught-up empty pages. Persist checkpoints for polling;
 changing page size preserves position. Returned records own their binary data.
-Capture finalization never establishes job completion.
+Docker process exit, capture completeness and JobDB completion are separate.
+A terminal launch record reports an observed exit code and OOM flag (when Docker
+supplied it), or an unknown outcome with a reason. Exit code 137 alone does not
+prove OOM. Docker/provider diagnostics are not worker stderr.
 
 Capture attaches stdout/stderr before start using a separate connection from lease
 stdin. Records are at most 4096 bytes, committed before listeners can read them.
@@ -127,12 +130,19 @@ accepted work. Capture is bounded to 128 streams, each with 64 queued records;
 32 resident callbacks each have a five-second deadline and 64 queued records.
 An uncooperative callback retains its slot until it returns.
 
-Provider closure interrupts active archives without finalizing them. Reopening
-uses native Docker timestamps and compares available output against the committed
-native byte prefix before appending. Native time/fingerprints are stored with replayed
-records; archive sequences remain independent of timestamps. It marks recovery incomplete because downtime/rotation cannot establish
-an exact native boundary. An unverifiable prefix stops that capture explicitly;
-removed workers become finalized/incomplete. Complete output from workers removed
-while the provider was down cannot be recovered. Disk errors or byte pressure can
-also cause early loss; compact history survives output eviction. Accepted containers
-are never stopped or recreated to repair observation.
+For new logging-enabled workers, pulse-docker disables Docker auto-removal and
+uses the existing rotated `json-file` logs (`10m`, three files) for recovery.
+Closure interrupts capture without stopping workers. On reopening, the writable
+provider finds its running and stopped workers. It verifies the committed byte
+prefix and source order before appending any Docker-retained suffix. Recovery
+stays incomplete: rotation, missing containers and storage errors can hide bytes.
+Capture reasons distinguish these cases; archive record sizes and paging are separate.
+
+The writable provider normally removes stopped workers once terminal history and
+the launch receipt are durable. It never force-removes workers or deletes cache
+volumes during log cleanup. Native recovery has a 24-hour grace, but cleanup can
+retain a stopped worker longer if the only launch receipt cannot be verified.
+This prevents repeat submission from creating another worker with the same ID.
+Restoring archive access lets startup or maintenance retry cleanup. Stopped
+workers do not use active capacity; the grace is not an offline disk limit.
+Compact history and launch receipts survive archive output eviction.

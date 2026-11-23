@@ -24,6 +24,7 @@ type dockerObservation struct {
 	inspection json.RawMessage
 	logs       chan dockerLogResult
 	wait       io.ReadCloser
+	condition  string
 }
 
 type dockerLogResult struct {
@@ -33,11 +34,16 @@ type dockerLogResult struct {
 
 func observeDocker(t *testing.T, ctx context.Context, socket, id string) *dockerObservation {
 	t.Helper()
+	return observeDockerUntil(t, ctx, socket, id, "removed")
+}
+
+func observeDockerUntil(t *testing.T, ctx context.Context, socket, id, condition string) *dockerObservation {
+	t.Helper()
 	tr := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "unix", strings.TrimPrefix(socket, "unix://"))
 	}}
 	t.Cleanup(tr.CloseIdleConnections)
-	o := &dockerObservation{Client: &http.Client{Transport: tr}, path: "http://docker/containers/" + url.PathEscape(id)}
+	o := &dockerObservation{Client: &http.Client{Transport: tr}, path: "http://docker/containers/" + url.PathEscape(id), condition: condition}
 	request := func(method, path string) io.ReadCloser {
 		req, err := http.NewRequestWithContext(ctx, method, path, nil)
 		if err != nil {
@@ -80,26 +86,32 @@ func observeDocker(t *testing.T, ctx context.Context, socket, id string) *docker
 			}
 		}
 	}()
-	o.wait = request("POST", o.path+"/wait?condition=removed")
+	o.wait = request("POST", o.path+"/wait?condition="+url.QueryEscape(condition))
 	return o
 }
 
 func (o *dockerObservation) finish(t *testing.T, ctx context.Context) (string, string) {
 	t.Helper()
 	var result struct {
-		StatusCode int
+		StatusCode *int
 		Error      *struct{ Message string }
 	}
 	if err := json.NewDecoder(o.wait).Decode(&result); err != nil {
-		t.Fatalf("wait for Docker auto-removal: %v", err)
+		t.Fatalf("wait for Docker condition %s: %v", o.condition, err)
 	}
 	o.wait.Close()
 	if result.Error != nil {
 		t.Fatal(result.Error.Message)
 	}
+	if result.StatusCode == nil {
+		t.Fatal("Docker wait did not report a status code")
+	}
 	logs := <-o.logs
 	if logs.err != nil {
 		t.Fatalf("Docker log stream: %v", logs.err)
+	}
+	if o.condition != "removed" {
+		return fmt.Sprint(*result.StatusCode), logs.text
 	}
 	req, err := http.NewRequestWithContext(ctx, "GET", o.path+"/json", nil)
 	if err != nil {
@@ -113,5 +125,5 @@ func (o *dockerObservation) finish(t *testing.T, ctx context.Context) (string, s
 	if res.StatusCode != http.StatusNotFound {
 		t.Fatalf("container still exists after removal notification: %s", res.Status)
 	}
-	return fmt.Sprint(result.StatusCode), logs.text
+	return fmt.Sprint(*result.StatusCode), logs.text
 }

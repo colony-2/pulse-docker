@@ -240,6 +240,30 @@ func testDockerLeaseScenarios(t *testing.T, opener func(*testing.T, context.Cont
 			f.control(t, "observed")
 			code, logs := observation.finish(t, ctx)
 			t.Logf("c2j container logs:\n%s", logs)
+			_, remote := p.(*restartClient)
+			if remote {
+				logReader := p.(provider.ProviderWithLaunchLogs)
+				var checkpoint string
+				var summaries int
+				for {
+					page, err := logReader.GetLaunchLog(ctx, provider.LaunchLogRequest{LaunchID: launch.LaunchID, PageSize: 1, PageToken: checkpoint})
+					if err != nil {
+						t.Fatal(err)
+					}
+					for _, record := range page.Records {
+						if record.Source == provider.LogSourceLaunch && strings.Contains(string(record.Data), "Docker worker exited: code="+code+",") {
+							summaries++
+						}
+					}
+					checkpoint = page.NextPageToken
+					if !page.HasMore {
+						if !page.Finalized || !page.Incomplete || summaries != 1 {
+							t.Fatal("SDK logs lost restarted capture status or terminal summary", page.Finalized, page.Incomplete, summaries)
+						}
+						break
+					}
+				}
+			}
 			info, err := f.backend.GetJob(ctx, key)
 			if err != nil {
 				t.Fatal(err)
@@ -340,7 +364,7 @@ func testDockerLeaseScenarios(t *testing.T, opener func(*testing.T, context.Cont
 				t.Fatalf("inspect: %v", err)
 			}
 			c := inspected[0]
-			if !c.HostConfig.AutoRemove || c.Config.Image != imageID || strings.Join(c.Config.Entrypoint, " ") != "c2j" || !strings.Contains(strings.Join(c.Config.Cmd, " "), "run with-lease") || len(c.HostConfig.Binds) != 0 || !strings.Contains(strings.Join(c.Config.Env, "\n"), "C2J_EXECUTION_IMAGE="+c2jIntegrationImage) || !strings.Contains(strings.Join(c.Config.Env, "\n"), "PULSE_EXECUTION_BASE="+baseName) || !strings.Contains(strings.Join(c.Config.Env, "\n"), "C2J_EXECUTION_PLATFORM="+platform) {
+			if c.HostConfig.AutoRemove == remote || c.Config.Image != imageID || strings.Join(c.Config.Entrypoint, " ") != "c2j" || !strings.Contains(strings.Join(c.Config.Cmd, " "), "run with-lease") || len(c.HostConfig.Binds) != 0 || !strings.Contains(strings.Join(c.Config.Env, "\n"), "C2J_EXECUTION_IMAGE="+c2jIntegrationImage) || !strings.Contains(strings.Join(c.Config.Env, "\n"), "PULSE_EXECUTION_BASE="+baseName) || !strings.Contains(strings.Join(c.Config.Env, "\n"), "C2J_EXECUTION_PLATFORM="+platform) {
 				t.Fatal("executor did not use the unmodified default image and direct c2j entrypoint")
 			}
 			if strings.Contains(strings.Join(c.Config.Env, "\n")+strings.Join(c.Config.Cmd, " "), "leaseToken") {

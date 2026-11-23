@@ -29,6 +29,7 @@ type serverOptions struct {
 	limit                                          int
 	follow                                         bool
 	offset                                         uint64
+	stream                                         string
 }
 
 func NewCommand(version string) *cobra.Command {
@@ -71,6 +72,9 @@ func command(use, short string, run func(context.Context, serverOptions, []strin
 		cmd.Args = cobra.MaximumNArgs(1)
 	}
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if name == "logs" && o.stream != "all" && o.stream != "stdout" && o.stream != "stderr" {
+			return fmt.Errorf("--stream must be all, stdout, or stderr")
+		}
 		if err := loadConfiguration(cmd, &o); err != nil {
 			return err
 		}
@@ -155,6 +159,7 @@ func command(use, short string, run func(context.Context, serverOptions, []strin
 		f.IntVar(&o.limit, "limit", 100, "Maximum observations (0 unlimited)")
 	}
 	if name == "logs" {
+		f.StringVar(&o.stream, "stream", "all", "Worker stream: all, stdout, or stderr")
 		f.BoolVarP(&o.follow, "follow", "F", false, "Follow retained output")
 		f.Uint64Var(&o.offset, "offset", 0, "Cumulative retained raw byte offset")
 		f.StringVarP(&o.launchID, "launch-id", "i", "", "Launch identity (alternative to positional argument)")

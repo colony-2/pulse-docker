@@ -187,6 +187,18 @@ func TestVerifyHookPropagatesRequiredCommandFailure(t *testing.T) {
 	}
 	dir := t.TempDir()
 	stub := `#!/bin/sh
+expiry_results() {
+ for scenario in in_memory_failure reopen write_failure_verified_receipt write_failure_verified_receipt/storage_restored write_failure_missing_receipt; do
+  if [ "$HARNESS_FAIL" = expiry-selection ] && [ "$scenario" = write_failure_verified_receipt/storage_restored ]; then
+   echo 'controlled required failure' >&2
+  else
+   printf '    --- PASS: TestLogsDamagedArchiveAtGraceExpiry/%s (0.00s)\n' "$scenario"
+  fi
+ done
+}
+case "$0" in
+ */provider.test) expiry_results; exit 0;;
+esac
 case "$1" in
  version) echo 'go version controlled harness'; exit 0;;
  test)
@@ -209,6 +221,10 @@ case "$1" in
       if [ "$HARNESS_FAIL" = moved-selection ] && [ "$required" = TestLogsFastCaptureBeforeStartAndAfterRemoval ]; then echo 'controlled required failure' >&2; else echo "$required"; fi;;
     esac
     if [ "$HARNESS_FAIL" = selection ]; then echo 'controlled required failure' >&2; exit 24; fi; exit 0;;
+   *' -c -o '*)
+    while [ "$1" != -o ]; do shift; done
+    cp "$0" "$2" && chmod 0755 "$2";;
+   *' -run ^TestLogsDamagedArchiveAtGraceExpiry$ '*) expiry_results; exit 0;;
    *) if [ "$HARNESS_FAIL" = test ]; then echo 'controlled required failure' >&2; exit 23; fi; exit 0;;
   esac;;
  list) echo github.com/colony-2/pulse-docker; echo 'controlled required failure' >&2; exit 25;;
@@ -221,7 +237,7 @@ esac
 	for _, tc := range []struct {
 		name string
 		code int
-	}{{"test", 23}, {"selection", 24}, {"graph", 25}, {"integration-selection", 26}, {"completion-selection", 1}, {"removal-selection", 1}, {"moved-selection", 1}, {"since-selection", 1}, {"transport-selection", 1}, {"partial-connection-selection", 1}, {"inbound-validation-selection", 1}, {"cli-selection", 1}, {"fixture-gate", 27}} {
+	}{{"test", 23}, {"selection", 24}, {"graph", 25}, {"integration-selection", 26}, {"completion-selection", 1}, {"removal-selection", 1}, {"moved-selection", 1}, {"since-selection", 1}, {"transport-selection", 1}, {"partial-connection-selection", 1}, {"inbound-validation-selection", 1}, {"cli-selection", 1}, {"fixture-gate", 27}, {"expiry-selection", 1}} {
 		t.Run(tc.name, func(t *testing.T) {
 			cmd := exec.CommandContext(t.Context(), "bash", "./scripts/verify.sh")
 			cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "HARNESS_FAIL="+tc.name)

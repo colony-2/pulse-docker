@@ -86,11 +86,14 @@ func ReadOutput(r io.Reader, emit func(api.LogSource, []byte) error) error {
 		}
 		for n > 0 {
 			size := min(int(n), len(buffer))
-			if _, err = io.ReadFull(r, buffer[:size]); err != nil {
-				return err
+			read, partial := io.ReadFull(r, buffer[:size])
+			if read != 0 {
+				if err = emit(source, buffer[:read]); err != nil {
+					return err
+				}
 			}
-			if err = emit(source, buffer[:size]); err != nil {
-				return err
+			if partial != nil {
+				return io.ErrUnexpectedEOF
 			}
 			n -= uint32(size)
 		}
@@ -100,7 +103,15 @@ func ReadOutput(r io.Reader, emit func(api.LogSource, []byte) error) error {
 // Logs replays whatever Docker still retains. Recovery must disclose uncertainty
 // because timestamps/rotation cannot establish an exactly-once archive boundary.
 func (e *Engine) Logs(ctx context.Context, id string) (io.ReadCloser, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", e.Base+e.Version+"/containers/"+url.PathEscape(id)+"/logs?follow=1&timestamps=1&stdout=1&stderr=1", nil)
+	return e.ReadLogs(ctx, id, true)
+}
+
+func (e *Engine) ReadLogs(ctx context.Context, id string, follow bool) (io.ReadCloser, error) {
+	query := "timestamps=1&stdout=1&stderr=1"
+	if follow {
+		query += "&follow=1"
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", e.Base+e.Version+"/containers/"+url.PathEscape(id)+"/logs?"+query, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -160,11 +171,14 @@ func ReadTimestampedOutput(r io.Reader, emit func(api.LogSource, time.Time, []by
 		}
 		for n > 0 {
 			size := min(int(n), len(buffer))
-			if _, err = io.ReadFull(r, buffer[:size]); err != nil {
-				return err
+			read, partial := io.ReadFull(r, buffer[:size])
+			if read != 0 {
+				if err = emit(source, native, buffer[:read]); err != nil {
+					return err
+				}
 			}
-			if err = emit(source, native, buffer[:size]); err != nil {
-				return err
+			if partial != nil {
+				return io.ErrUnexpectedEOF
 			}
 			n -= uint32(size)
 		}

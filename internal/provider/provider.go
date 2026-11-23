@@ -185,7 +185,6 @@ func (p *Provider) Submit(ctx context.Context, launches []provider.Launch, optio
 	if p.capture != nil {
 		for _, l := range launches {
 			p.capture.warn(p.capture.store.Begin(launchlogs.History{LaunchID: l.LaunchID, InstanceID: l.Job.InstanceID, TenantID: l.Job.TenantID, JobID: l.Job.JobID, SubmittedAt: time.Now().UTC()}))
-			p.capture.warn(p.capture.store.Append(l.LaunchID, provider.LogSourceLaunch, []byte("preparing Docker worker\n")))
 		}
 	}
 	out := make([]provider.Submission, 0, len(launches))
@@ -257,6 +256,7 @@ func (p *Provider) Maintain(ctx context.Context) error {
 	defer p.leave()
 	if p.capture != nil {
 		p.capture.warn(p.capture.store.Clean())
+		p.capture.reconcile(ctx, p.native, false)
 	}
 	return p.native.Maintain(ctx)
 }
@@ -266,21 +266,16 @@ func (p *Provider) finishObservations(ls []provider.Launch, out []provider.Submi
 		seen := map[string]bool{}
 		for _, r := range out {
 			seen[r.LaunchID] = true
-			p.capture.warn(p.capture.store.Observe(r.LaunchID, "", string(r.Status), ""))
-			p.capture.warn(p.capture.store.Append(r.LaunchID, provider.LogSourceLaunch, []byte("admission: "+string(r.Status)+"\n")))
-			if r.Status != provider.Accepted && r.Status != provider.Unknown {
-				p.capture.warn(p.capture.store.Finish(r.LaunchID, true, false))
+			final := r.Status != provider.Accepted && r.Status != provider.Unknown
+			p.capture.warn(p.capture.store.RecordAdmission(r.LaunchID, string(r.Status), final, false))
+			if !final {
+				p.capture.admitted(r.LaunchID)
 			}
 		}
 		for _, l := range ls {
 			if !seen[l.LaunchID] {
-				p.capture.warn(p.capture.store.Finish(l.LaunchID, true, true))
+				p.capture.warn(p.capture.store.RecordAdmission(l.LaunchID, "unknown", true, true))
 			}
-		}
-	}
-	if p.capture != nil {
-		for _, l := range ls {
-			p.capture.admitted(l.LaunchID)
 		}
 	}
 	p.logs.Admitted(sub, out)

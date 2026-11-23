@@ -20,6 +20,13 @@ matching active launches are recognized without another create/start; changed
 immutable payloads sharing their ID reject. A created but unconfirmed worker, or
 unverifiable cache attachment, remains unknown.
 
+Only new archive-enabled workers use provider-owned removal. Archive-free calls
+and pre-existing workers retain their lifecycle mode. The archive and SDK log
+formats remain compatible; exit details and reasons are optional history metadata,
+and the terminal summary uses the existing launch-record source. Older providers
+do not manage new retention-marked workers. Retain the archive metadata and run
+the current writable provider to finish cleanup after an upgrade or rollback.
+
 CPU rounds to 10 millicores; memory/scratch round to 4096-byte pages, including
 Docker's minimum-memory adjustment. Charges include scratch, per-worker overhead,
 slots, cache helpers and uncertain creation. Scratch-only requests do not add an

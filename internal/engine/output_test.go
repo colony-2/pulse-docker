@@ -77,6 +77,35 @@ func TestOutputAttachmentRetainsBufferedBytes(t *testing.T) {
 		t.Fatal("cancellation ignored")
 	}
 }
+
+func TestOutputPartialPayloadPreservesWorkerStderr(t *testing.T) {
+	stamp := "2026-11-23T00:00:00Z "
+	for _, retained := range []bool{false, true} {
+		var prefix []byte
+		if retained {
+			prefix = []byte(stamp)
+		}
+		frame := outputFrame(2, append(prefix, 0, 255, 128, 'x', 'y'))
+		frame = frame[:len(frame)-2]
+		var got []byte
+		emit := func(source api.LogSource, data []byte) error {
+			if source != api.LogSourceStderr {
+				t.Fatal(source)
+			}
+			got = append(got, data...)
+			return nil
+		}
+		var err error
+		if retained {
+			err = ReadTimestampedOutput(bytes.NewReader(frame), func(source api.LogSource, _ time.Time, data []byte) error { return emit(source, data) })
+		} else {
+			err = ReadOutput(bytes.NewReader(frame), emit)
+		}
+		if err != io.ErrUnexpectedEOF || !bytes.Equal(got, []byte{0, 255, 128}) {
+			t.Fatal(err, got)
+		}
+	}
+}
 func TestOutputRetainedNativeTimestampAndBinaryBytes(t *testing.T) {
 	stamp := time.Now().UTC().Truncate(time.Nanosecond)
 	raw := []byte{0, 255, 10}

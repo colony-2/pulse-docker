@@ -327,7 +327,7 @@ func TestDockerCLIIntegration(t *testing.T) {
 				t.Fatal("expected exactly one worker", ids)
 			}
 			id := ids[0]
-			observation := observeDocker(t, sessionCtx, socket, id)
+			observation := observeDockerUntil(t, sessionCtx, socket, id, "next-exit")
 			f.control(t, "observed")
 			waitCLICondition(t, sessionCtx, func() bool { return f.stats(t).Renewals >= 3 })
 			if p != nil {
@@ -340,6 +340,16 @@ func TestDockerCLIIntegration(t *testing.T) {
 				t.Fatal("second owner acquired active daemon")
 			}
 			renewals := f.stats(t).Renewals
+			var generation uint64
+			startInbound := func() *plugin.Process {
+				var child *plugin.Process
+				waitCLICondition(t, sessionCtx, func() bool {
+					var err error
+					child, err = plugin.Start(sessionCtx, plugin.StartOptions{Executable: binary, Args: append(append([]string{}, common...), "--mode", "inbound"), Env: map[string]string{"HOME": t.TempDir()}, Init: plugin.Initialization{Name: "fixture", BaseDir: t.TempDir()}, StartupTimeout: 5 * time.Second})
+					return err == nil
+				})
+				return child
+			}
 			if scenario == "outbound_restart" {
 				listener.disconnect()
 				second := waitCLIProvider(t, sessionCtx, collector, first.Generation)
@@ -350,6 +360,7 @@ func TestDockerCLIIntegration(t *testing.T) {
 				outbound = startCLI(t, sessionCtx, binary, args, "live-fixture-key")
 				third := waitCLIProvider(t, sessionCtx, collector, second.Generation)
 				assertCLIListing(t, sessionCtx, third.Provider, launch, id)
+				generation = third.Generation
 				outbound.stop(t)
 			} else {
 				if err := parent.Process.Kill(); err != nil {
@@ -359,12 +370,7 @@ func TestDockerCLIIntegration(t *testing.T) {
 				parentWaited = true
 				waitCLICondition(t, sessionCtx, func() bool { return f.stats(t).Renewals > renewals })
 				renewals = f.stats(t).Renewals
-				var child *plugin.Process
-				waitCLICondition(t, sessionCtx, func() bool {
-					var err error
-					child, err = plugin.Start(sessionCtx, plugin.StartOptions{Executable: binary, Args: append(append([]string{}, common...), "--mode", "inbound"), Env: map[string]string{"HOME": t.TempDir()}, Init: plugin.Initialization{Name: "fixture", BaseDir: t.TempDir()}, StartupTimeout: 5 * time.Second})
-					return err == nil
-				})
+				child := startInbound()
 				assertCLIListing(t, sessionCtx, child, launch, id)
 				if err := child.Close(); err != nil {
 					t.Fatal(err)
@@ -382,6 +388,22 @@ func TestDockerCLIIntegration(t *testing.T) {
 			if code != "0" {
 				t.Fatalf("worker exit=%s logs=%s", code, logs)
 			}
+			if state := docker(t, "inspect", "--format", "{{.State.Status}}/{{.State.ExitCode}}/{{.HostConfig.AutoRemove}}", id); state != "exited/0/false" {
+				t.Fatalf("offline worker was not retained as a stopped container: %s", state)
+			}
+			t.Logf("provider offline: original container %s exited 0 and remained available for recovery", id)
+			var recovered api.Provider
+			if scenario == "outbound_restart" {
+				outbound = startCLI(t, sessionCtx, binary, args, "live-fixture-key")
+				defer outbound.stop(t)
+				recovered = waitCLIProvider(t, sessionCtx, collector, generation).Provider
+			} else {
+				child := startInbound()
+				defer child.Close()
+				recovered = child
+			}
+			assertCaptureCleanup(t, sessionCtx, Config{Socket: socket}, id)
+			assertCLIRecoveredExit(t, sessionCtx, recovered, launch.LaunchID)
 			info, err := f.backend.GetJob(sessionCtx, ref.Key())
 			if err != nil {
 				t.Fatal(err)
@@ -397,6 +419,30 @@ func TestDockerCLIIntegration(t *testing.T) {
 		}) {
 			t.Fatal("external acceptance failed; stopping scenarios")
 		}
+	}
+}
+
+func assertCLIRecoveredExit(t *testing.T, ctx context.Context, provider api.Provider, launchID string) {
+	t.Helper()
+	reader, ok := provider.(api.ProviderWithLaunchLogs)
+	if !ok {
+		t.Fatal("reopened provider does not support launch logs")
+	}
+	request := api.LaunchLogRequest{LaunchID: launchID}
+	for {
+		page, err := reader.GetLaunchLog(ctx, request)
+		if err != nil || !page.Finalized || !page.Incomplete {
+			t.Fatalf("recovered archive must be finalized and disclose interruption: finalized=%t incomplete=%t error=%v", page.Finalized, page.Incomplete, err)
+		}
+		for _, record := range page.Records {
+			if record.Source == api.LogSourceLaunch && strings.Contains(string(record.Data), "Docker worker exited: code=0,") {
+				return
+			}
+		}
+		if !page.HasMore {
+			t.Fatal("recovered archive did not report exit 0")
+		}
+		request.PageToken = page.NextPageToken
 	}
 }
 

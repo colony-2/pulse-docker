@@ -15,6 +15,7 @@ pulse-docker images
 pulse-docker launches --tenant team --limit 20
 pulse-docker launches show LAUNCH_ID
 pulse-docker logs LAUNCH_ID --follow
+pulse-docker logs LAUNCH_ID --stream stderr
 pulse-docker upgrade --progress linear
 ```
 
@@ -78,11 +79,18 @@ provider version; deleted historical output cannot be recovered.
 
 Launches supports exact tenant/job filters, `--since` as an RFC3339 timestamp or
 nonnegative duration ago (for example `24h`), newest-first ordering,
-`--limit 100` (zero unlimited), JSON and individual lookup. Logs prints binary worker
-stdout/stderr unchanged; launch diagnostics and gap warnings go to stderr. Its byte
-offset counts worker output, independently of API sequence checkpoints. Incomplete
-capture prints available bytes and returns failure. Inspection selects the daemon's
-archive through a read-only identity query, so Docker must remain reachable.
+`--limit 100` (zero unlimited), JSON and individual lookup. History shows the last
+observed process state, exit, OOM and reason separately from capture. An older
+entry without exit information is unknown. `launches show` gives the observation
+time and any capture gaps.
+
+`logs --stream all|stdout|stderr` writes binary worker bytes to command stdout.
+The default is `all`. Launch diagnostics and gap warnings go to command stderr
+in every mode. The offset counts all retained worker bytes, including filtered
+streams. Complete retrieval of a failed worker still succeeds; incomplete capture
+prints the available bytes and returns failure. Empty worker stderr does not
+establish that a worker succeeded. Inspection selects the daemon's archive through
+a read-only identity query, so Docker must remain reachable.
 
 See [logging and recovery limits](integration.md#optional-logs) and
 [required acceptance checks](testing.md). Updating the host binary does not update

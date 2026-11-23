@@ -167,6 +167,19 @@ func live(r io.Reader, mode string) error {
 			}
 		}
 	}
+	if mode == "remote" {
+		for suite, scenarios := range map[string][]string{
+			"TestDockerFastCaptureIntegration":    {"exit_zero", "exit_nonzero", "oom"},
+			"TestDockerCaptureRestartIntegration": {"running_reopen", "stopped_reopen", "forced_removal", "rotation", "grace_expiry"},
+			"TestDockerManagementIntegration":     {"read_launch_logs_beside_active_owner"},
+		} {
+			for _, scenario := range scenarios {
+				if !ended[suite+"/"+scenario] {
+					return fmt.Errorf("required Docker logging scenario did not pass: %s/%s", suite, scenario)
+				}
+			}
+		}
+	}
 	if mode == "linux" {
 		if branch == "" || native == "" || native == alternative {
 			return fmt.Errorf("missing or invalid D28 branch/platform result")

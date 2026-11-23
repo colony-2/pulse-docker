@@ -3,21 +3,24 @@
 package provider
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"github.com/colony-2/pulse-docker/internal/launchlogs"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/colony-2/pulse-docker/internal/bases"
+	"github.com/colony-2/pulse-docker/internal/launchlogs"
 	compute "github.com/colony-2/pulse-docker/internal/native"
 	api "github.com/colony-2/pulse-provider-api"
 	"github.com/colony-2/pulse-provider-api/plugin"
@@ -42,6 +45,14 @@ func TestDockerRemoteOutboundLeaseIntegration(t *testing.T) {
 type restartClient struct {
 	api.Provider
 	restart func() api.Provider
+}
+
+func (p *restartClient) GetLaunchLog(ctx context.Context, request api.LaunchLogRequest) (api.LaunchLogResponse, error) {
+	logs, ok := p.Provider.(api.ProviderWithLaunchLogs)
+	if !ok {
+		return api.LaunchLogResponse{}, api.ErrLaunchLogUnsupported
+	}
+	return logs.GetLaunchLog(ctx, request)
 }
 
 func (p *restartClient) Submit(ctx context.Context, ls []api.Launch, o api.SubmitOptions) ([]api.Submission, api.LogSubscription, error) {
@@ -182,6 +193,24 @@ func liveDocker(t *testing.T) (context.Context, Config, func(...string) string) 
 	return ctx, Config{Socket: socket, LockDir: t.TempDir(), DependencyCache: CacheConfig{Disabled: true}}, docker
 }
 func TestDockerFastCaptureIntegration(t *testing.T) {
+	for _, scenario := range []struct {
+		name, script   string
+		exit           int
+		oom            bool
+		stdout, stderr []byte
+	}{
+		{"exit_zero", "printf '\\000\\377fast'; printf 'stderr' >&2", 0, false, append([]byte{0, 255}, []byte("fast")...), []byte("stderr")},
+		{"exit_nonzero", "printf 'failed'; exit 7", 7, false, []byte("failed"), nil},
+		{"oom", `awk 'BEGIN { for (i=0;;i++) a[i]=sprintf("%01024d",i) }' &
+child=$!; result=0; wait "$child" 2>/dev/null || result=$?; sleep 1; exit "$result"`, 137, true, nil, nil},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			testDockerFastCapture(t, scenario.script, scenario.exit, scenario.oom, scenario.stdout, scenario.stderr)
+		})
+	}
+}
+
+func testDockerFastCapture(t *testing.T, script string, code int, oom bool, stdout, stderr []byte) {
 	ctx, cfg, docker := liveDocker(t)
 	platform := strings.ReplaceAll(strings.ReplaceAll(docker("info", "--format", "{{.OSType}}/{{.Architecture}}"), "aarch64", "arm64"), "x86_64", "amd64")
 	directory := t.TempDir()
@@ -206,7 +235,14 @@ func TestDockerFastCaptureIntegration(t *testing.T) {
 		}
 	})
 	p.capture.store.Begin(launchHistory(id))
-	ls := []compute.Launch{{Request: compute.Request{LaunchID: id, Allocation: compute.Allocation{Image: "alpine:3.21", Platform: platform}, Metadata: map[string]string{"pulse_job_id": id}}, Process: compute.Process{Command: []string{"/bin/sh"}, Args: []string{"-c", "printf '\\000\\377fast'; printf 'stderr' >&2"}}}}
+	var memory int64
+	if oom {
+		if p.native.unenforced {
+			t.Fatal("Docker memory enforcement is required for OOM acceptance")
+		}
+		memory = 32 << 20
+	}
+	ls := []compute.Launch{{Request: compute.Request{LaunchID: id, Allocation: compute.Allocation{Image: "alpine:3.21", Platform: platform, MemoryBytes: memory}, Metadata: map[string]string{"pulse_job_id": id}}, Process: compute.Process{Command: []string{"/bin/sh"}, Args: []string{"-c", script}}}}
 	out, err := p.native.Submit(ctx, ls)
 	p.capture.admitted(id)
 	if err != nil || len(out) != 1 || out[0].Status != compute.Accepted {
@@ -224,16 +260,40 @@ func TestDockerFastCaptureIntegration(t *testing.T) {
 	for _, r := range page.Records {
 		streams[r.Source] = append(streams[r.Source], r.Data...)
 	}
-	want := map[api.LogSource][]byte{
-		api.LogSourceStdout: append([]byte{0, 255}, []byte("fast")...),
-		api.LogSourceStderr: []byte("stderr"),
-	}
-	if !reflect.DeepEqual(streams, want) || !page.Finalized || page.Incomplete {
+	if string(streams[api.LogSourceStdout]) != string(stdout) || string(streams[api.LogSourceStderr]) != string(stderr) || !page.Finalized || page.Incomplete {
 		t.Fatal("fast output changed", streams, page)
 	}
-	// Output EOF and Docker's asynchronous AutoRemove do not complete atomically.
-	// Require actual disappearance before reopening the archive, without removing
-	// the worker ourselves until test cleanup.
+	process := assertCaptureOutcome(t, p, id, code)
+	if process.OOMKilled == nil || *process.OOMKilled != oom || !strings.Contains(string(streams[api.LogSourceLaunch]), fmt.Sprintf("Docker worker exited: code=%d, oom_killed=%v", code, oom)) {
+		t.Fatal("missing Docker OOM evidence or launch summary", process, streams[api.LogSourceLaunch])
+	}
+	assertCaptureCleanup(t, ctx, cfg, containerID)
+	p.Close()
+	p, err = NewWithOptions(ctx, cfg, Options{Logging: &LoggingConfig{Directory: directory, Owner: "fixture", Compress: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	if again, err := p.GetLaunchLog(ctx, api.LaunchLogRequest{LaunchID: id}); err != nil || !reflect.DeepEqual(again.Records, page.Records) || !again.Finalized || again.Incomplete {
+		t.Fatal(again, err)
+	}
+	assertCaptureOutcome(t, p, id, code)
+	t.Logf("container=%s stdout=%x stderr=%x", containerID, sha256.Sum256(stdout), sha256.Sum256(stderr))
+}
+
+func assertCaptureOutcome(t *testing.T, p *Provider, id string, code int) *launchlogs.Process {
+	t.Helper()
+	obs, err := p.capture.store.Observation(id)
+	process := obs.History.Process
+	if err != nil || process == nil || process.State != "exited" || process.ExitCode == nil || *process.ExitCode != code {
+		t.Fatal("missing Docker observation", obs.History, err)
+	}
+	t.Logf("launch=%s container=%s exit=%d source=%s", id, obs.History.ContainerID, code, process.Source)
+	return process
+}
+
+func assertCaptureCleanup(t *testing.T, ctx context.Context, cfg Config, containerID string) {
+	t.Helper()
 	removal, cancel := context.WithTimeout(ctx, 15*time.Second)
 	ids, err := waitRemoteFixtureRemoval(removal, func(check context.Context) (string, error) {
 		b, err := exec.CommandContext(check, "docker", "--host", cfg.Socket, "ps", "-aq", "--no-trunc", "--filter", "id="+containerID).CombinedOutput()
@@ -247,19 +307,17 @@ func TestDockerFastCaptureIntegration(t *testing.T) {
 		diagnostic, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		state, inspectErr := exec.CommandContext(diagnostic, "docker", "--host", cfg.Socket, "inspect", "--format", "status={{.State.Status}} exit={{.State.ExitCode}} autoremove={{.HostConfig.AutoRemove}}", containerID).CombinedOutput()
-		t.Fatalf("worker was not automatically removed: %v; last inventory=%q; inspect error=%v; state=%s", err, ids, inspectErr, state)
+		t.Fatalf("provider did not remove stopped worker: %v; last inventory=%q; inspect error=%v; state=%s", err, ids, inspectErr, state)
 	}
-	p.Close()
-	p, err = NewWithOptions(ctx, cfg, Options{Logging: &LoggingConfig{Directory: directory, Owner: "fixture", Compress: true}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer p.Close()
-	if again, err := p.GetLaunchLog(ctx, api.LaunchLogRequest{LaunchID: id}); err != nil || !reflect.DeepEqual(again.Records, page.Records) || !again.Finalized || again.Incomplete {
-		t.Fatal(again, err)
-	}
+	t.Logf("provider removed container %s before fixture teardown", containerID)
 }
 func TestDockerCaptureRestartIntegration(t *testing.T) {
+	for _, scenario := range []string{"running_reopen", "stopped_reopen", "forced_removal", "rotation", "grace_expiry"} {
+		t.Run(scenario, func(t *testing.T) { testDockerCaptureRestart(t, scenario) })
+	}
+}
+
+func testDockerCaptureRestart(t *testing.T, scenario string) {
 	ctx, cfg, docker := liveDocker(t)
 	platform := strings.ReplaceAll(strings.ReplaceAll(docker("info", "--format", "{{.OSType}}/{{.Architecture}}"), "aarch64", "arm64"), "x86_64", "amd64")
 	directory := t.TempDir()
@@ -268,9 +326,14 @@ func TestDockerCaptureRestartIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer p.Close()
 	id := fmt.Sprintf("restart-%d", time.Now().UnixNano())
 	p.capture.store.Begin(launchHistory(id))
-	l := compute.Launch{Request: compute.Request{LaunchID: id, Allocation: compute.Allocation{Image: "alpine:3.21", Platform: platform}, Metadata: map[string]string{"pulse_job_id": id}}, Process: compute.Process{Command: []string{"/bin/sh"}, Args: []string{"-c", "echo prefix; sleep 5; echo suffix; sleep 300"}}}
+	script := "echo prefix; while [ ! -f /tmp/release ]; do sleep .1; done; echo suffix; echo separate-stderr >&2; exit 7"
+	if scenario == "rotation" {
+		script = "echo prefix; while [ ! -f /tmp/release ]; do sleep .1; done; yes rotation-line | head -c 40000000; exit 7"
+	}
+	l := compute.Launch{Request: compute.Request{LaunchID: id, Allocation: compute.Allocation{Image: "alpine:3.21", Platform: platform}, Metadata: map[string]string{"pulse_job_id": id}}, Process: compute.Process{Command: []string{"/bin/sh"}, Args: []string{"-c", script}}}
 	out, err := p.native.Submit(ctx, []compute.Launch{l})
 	p.capture.admitted(id)
 	if err != nil || out[0].Status != compute.Accepted {
@@ -281,57 +344,126 @@ func TestDockerCaptureRestartIntegration(t *testing.T) {
 	t.Cleanup(func() { exec.Command("docker", "--host", cfg.Socket, "rm", "-f", container).Run() })
 	waitLogText(t, ctx, p, id, "prefix")
 	p.Close()
-	p, err = NewWithOptions(ctx, cfg, options)
-	if err != nil {
-		t.Fatal(err)
+	now := time.Now
+	switch scenario {
+	case "forced_removal":
+		docker("rm", "-f", container)
+	case "running_reopen":
+		if state := docker("inspect", "--format", "{{.State.Status}}", container); state != "running" {
+			t.Fatal(state)
+		}
+	default:
+		docker("exec", container, "touch", "/tmp/release")
+		if code := docker("wait", container); code != "7" {
+			t.Fatal(code)
+		}
+		if stopped := docker("inspect", "--format", "{{.State.Status}} {{.State.ExitCode}}", container); stopped != "exited 7" {
+			t.Fatal(stopped)
+		}
+		t.Logf("container=%s stopped during downtime, exit=7", container)
+		if scenario == "grace_expiry" {
+			now = func() time.Time { return time.Now().Add(25 * time.Hour) }
+		}
 	}
-	waitLogText(t, ctx, p, id, "suffix")
-	p.Close()
-	docker("rm", "-f", container)
-	p, err = NewWithOptions(ctx, cfg, options)
+	p, err = newWithOptions(ctx, cfg, options, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p.Close()
+	if scenario == "running_reopen" {
+		docker("exec", container, "touch", "/tmp/release")
+	}
 	page := waitFinalLog(t, ctx, p, id)
 	if !page.Incomplete {
 		t.Fatal("downtime removal not disclosed")
 	}
-	var raw string
+	var stdout, stderr string
 	for _, r := range page.Records {
-		raw += string(r.Data)
+		switch r.Source {
+		case api.LogSourceStdout:
+			stdout += string(r.Data)
+		case api.LogSourceStderr:
+			stderr += string(r.Data)
+		}
 	}
-	if strings.Count(raw, "prefix") != 1 || strings.Count(raw, "suffix") != 1 {
-		t.Fatal("recovery duplicated output", raw)
+	observation, err := p.capture.store.Observation(id)
+	if err != nil {
+		t.Fatal(err)
 	}
+	if scenario == "forced_removal" {
+		process := observation.History.Process
+		if process == nil || process.State != "unknown" || process.ExitCode != nil || process.Reason != "container_missing" || !slices.Contains(observation.History.GapReasons, "container_missing") {
+			t.Fatal(observation)
+		}
+	} else {
+		assertCaptureOutcome(t, p, id, 7)
+		assertCaptureCleanup(t, ctx, cfg, container)
+	}
+	switch scenario {
+	case "running_reopen", "stopped_reopen":
+		if stdout != "prefix\nsuffix\n" || stderr != "separate-stderr\n" {
+			t.Fatal("missing or duplicate recovered bytes", stdout, stderr)
+		}
+	case "rotation", "grace_expiry", "forced_removal":
+		reason := map[string]string{"rotation": "replay_unverifiable", "grace_expiry": "native_retention_expired", "forced_removal": "container_missing"}[scenario]
+		if stdout != "prefix\n" || stderr != "" || !slices.Contains(observation.History.GapReasons, reason) {
+			t.Fatal("unknown replay boundary", stdout, stderr, observation)
+		}
+	}
+	if scenario == "grace_expiry" {
+		again, err := p.native.Submit(ctx, []compute.Launch{l})
+		if err != nil || len(again) != 1 || again[0].Status != compute.Accepted {
+			t.Fatal("accepted identity not preserved", again, err)
+		}
+		assertCaptureCleanup(t, ctx, cfg, container)
+		if newID := docker("ps", "-aq", "--filter", "label=pulse_launch_id="+id); newID != "" {
+			t.Fatal("receipt allowed replay", newID)
+		}
+	}
+	t.Logf("container=%s stdout=%x stderr=%x gaps=%v", container, sha256.Sum256([]byte(stdout)), sha256.Sum256([]byte(stderr)), observation.History.GapReasons)
 }
 func TestDockerManagementIntegration(t *testing.T) {
 	ctx, cfg, docker := liveDocker(t)
 	binary := remoteBinary(t)
 	cfg.DependencyCache = CacheConfig{Namespace: fmt.Sprintf("refresh-%d", time.Now().UnixNano()), Generation: "fixture", MaxAge: time.Hour}
-	p, err := New(ctx, cfg)
+	logging := LoggingConfig{Directory: t.TempDir(), Owner: "management-fixture", Compress: true}
+	p, err := NewWithOptions(ctx, cfg, Options{Logging: &logging})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p.Close()
 	original := docker("image", "inspect", "--format", "{{.Id}}", bases.Image)
 	id := fmt.Sprintf("refresh-worker-%d", time.Now().UnixNano())
+	completedID := id + "-completed"
 	platform := p.platforms[0]
 	l := compute.Launch{Request: compute.Request{LaunchID: id, Allocation: compute.Allocation{Image: bases.Image, Platform: platform, MemoryBytes: 256 << 20}, Metadata: map[string]string{"pulse_jobdb_instance_id": "fixture", "pulse_tenant_id": "fixture", "pulse_job_id": id}}, Process: compute.Process{Command: []string{"/bin/sh"}, Args: []string{"-c", "echo refresh-marker > /var/cache/pulse/refresh-marker; sleep 300"}}}
 	t.Cleanup(func() {
-		ids, _ := exec.Command("docker", "--host", cfg.Socket, "ps", "-aq", "--filter", "label=pulse_launch_id="+id).Output()
-		for _, container := range strings.Fields(string(ids)) {
-			exec.Command("docker", "--host", cfg.Socket, "rm", "-f", container).Run()
+		for _, launchID := range []string{id, completedID} {
+			ids, _ := exec.Command("docker", "--host", cfg.Socket, "ps", "-aq", "--filter", "label=pulse_launch_id="+launchID).Output()
+			for _, container := range strings.Fields(string(ids)) {
+				exec.Command("docker", "--host", cfg.Socket, "rm", "-f", container).Run()
+			}
 		}
 		volumes, _ := exec.Command("docker", "--host", cfg.Socket, "volume", "ls", "-q", "--filter", "label=pulse_cache_owner="+p.native.cacheOwner()).Output()
 		for _, volume := range strings.Fields(string(volumes)) {
 			exec.Command("docker", "--host", cfg.Socket, "volume", "rm", volume).Run()
 		}
 	})
-	out, err := p.native.Submit(ctx, []compute.Launch{l})
-	if err != nil || len(out) != 1 || out[0].Status != compute.Accepted {
-		t.Fatal(out, err)
+	start := func(t *testing.T, launch compute.Launch) {
+		t.Helper()
+		if err := p.capture.store.Begin(launchHistory(launch.LaunchID)); err != nil {
+			t.Fatal(err)
+		}
+		out, err := p.native.Submit(ctx, []compute.Launch{launch})
+		if err != nil || len(out) != 1 || out[0].Status != compute.Accepted {
+			t.Fatal(out, err)
+		}
+		if err := p.capture.store.RecordAdmission(launch.LaunchID, string(api.Accepted), false, false); err != nil {
+			t.Fatal(err)
+		}
+		p.capture.admitted(launch.LaunchID)
 	}
+	start(t, l)
 	container := docker("ps", "-q", "--filter", "label=pulse_launch_id="+id)
 	if container == "" {
 		t.Fatal("holding worker missing")
@@ -347,6 +479,55 @@ func TestDockerManagementIntegration(t *testing.T) {
 			t.Fatalf("%s beside provider: %v %s", command, err, b)
 		}
 	}
+	t.Run("read_launch_logs_beside_active_owner", func(t *testing.T) {
+		completed := l
+		completed.LaunchID = completedID
+		completed.Metadata = map[string]string{"pulse_jobdb_instance_id": "fixture", "pulse_tenant_id": "fixture", "pulse_job_id": completedID}
+		completed.Process.Args = []string{"-c", "echo worker-stdout; echo worker-stderr >&2; exit 7"}
+		start(t, completed)
+		waitFinalLog(t, ctx, p, completedID)
+		assertCaptureOutcome(t, p, completedID, 7)
+		before, err := p.capture.store.DurableObservation(completedID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertCaptureCleanup(t, ctx, cfg, before.History.ContainerID)
+		before, err = p.capture.store.DurableObservation(completedID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		active := docker("inspect", "--format", "{{.Id}} {{.State.Status}} {{.State.StartedAt}}", container)
+		if !strings.Contains(active, " running ") {
+			t.Fatal("owner has no active worker", active)
+		}
+		cli := func(arguments ...string) (string, string, error) {
+			args := append(arguments, "--socket", cfg.Socket, "--lock-dir", cfg.LockDir, "--log-directory", logging.Directory, "--owner", logging.Owner)
+			cmd := exec.CommandContext(ctx, binary, args...)
+			var diagnostic bytes.Buffer
+			cmd.Stderr = &diagnostic
+			output, err := cmd.Output()
+			return string(output), diagnostic.String(), err
+		}
+		output, diagnostic, err := cli("launches", "show", completedID, "--json")
+		var history launchlogs.History
+		if err != nil || json.Unmarshal([]byte(output), &history) != nil || history.LaunchID != completedID || history.Admission != string(api.Accepted) || history.Capture != "closed" || history.Incomplete || history.Process == nil || history.Process.ExitCode == nil || *history.Process.ExitCode != 7 {
+			t.Fatal(output, diagnostic, err)
+		}
+		output, diagnostic, err = cli("logs", completedID, "--stream", "stderr")
+		if err != nil || output != "worker-stderr\n" || !strings.Contains(diagnostic, "Docker worker exited: code=7") || strings.Contains(diagnostic, "worker-stderr") || strings.Contains(diagnostic, "worker-stdout") {
+			t.Fatal(output, diagnostic, err)
+		}
+		after, err := p.capture.store.DurableObservation(completedID)
+		if err != nil || !reflect.DeepEqual(after, before) {
+			t.Fatal("management changed the archived launch", before, after, err)
+		}
+		if got := docker("inspect", "--format", "{{.Id}} {{.State.Status}} {{.State.StartedAt}}", container); got != active {
+			t.Fatal("management changed the holding worker", active, got)
+		}
+		if got := docker("ps", "-aq", "--filter", "label=pulse_launch_id="+completedID); got != "" {
+			t.Fatal("management recreated the completed worker", got)
+		}
+	})
 	sentinel := fmt.Sprintf("refresh-unrelated-%d", time.Now().UnixNano())
 	docker("volume", "create", sentinel)
 	t.Cleanup(func() { exec.Command("docker", "--host", cfg.Socket, "volume", "rm", sentinel).Run() })

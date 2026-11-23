@@ -112,7 +112,11 @@ it is verification tooling, not a provider executable.
 
 Record candidate identity, host architecture, Go/CLI/daemon/API versions, image
 IDs/digests, installed c2j version, command exits and asserted outcomes. Keep large
-logs in diagnostics. Fixtures delete only their own named resources. Cache tests
+logs in diagnostics. Fixtures delete only their own named resources. The remote
+gate requires individual passes for zero, nonzero and Docker-confirmed OOM exits,
+plus running and stopped reopen, forced removal, rotation and grace expiry.
+Provider deletion is checked before teardown. No Docker socket, disabled memory
+enforcement or a skipped subtest counts as passing. Cache tests
 use isolated namespaces; do not prune unrelated daemon resources.
 
 The immutable original-source fixtures and deterministic failure cases cover
