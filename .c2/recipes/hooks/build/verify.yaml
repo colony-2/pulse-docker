@@ -20,6 +20,15 @@ inputs:
   base: ${{ inputs.base }}
   documents: ${{ inputs.documents }}
 sequence:
+- id: hook-contract
+  op: command_execution
+  const: true
+  inputs:
+    timeout: 2m
+    capture_diagnostics: always
+    env:
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+    run: c2j test run --file .c2/tests/verify-hook.test.json
 - id: deterministic
   op: command_execution
   const: true
@@ -68,5 +77,5 @@ sequence:
 outputs:
   api_version: c2.build-hook/v1
   status: passed
-  summary: Deterministic log recovery and CLI verification (including expiry receipt safeguards and capture closure after storage restoration), all three CLI recovery scenarios, all five remote suites, and all six required Linux Docker suites passed. Execution logs identify the candidate and environment.
-  artifact_refs: ${{ jq([sequence.deterministic.outputs.?diagnostics.orValue({}), sequence['live-cli'].outputs.?diagnostics.orValue({}), sequence['live-remote'].outputs.?diagnostics.orValue({}), sequence['live-linux'].outputs.?diagnostics.orValue({})], 'add') }}
+  summary: The controlled hook-contract suite, deterministic log recovery and CLI verification (including expiry receipt safeguards and capture closure after storage restoration), all three CLI recovery scenarios, all five remote suites, and all six required Linux Docker suites (including the completed-lease case) passed. Execution logs identify the candidate and environment.
+  artifact_refs: ${{ jq([sequence['hook-contract'].outputs.?diagnostics.orValue({}), sequence.deterministic.outputs.?diagnostics.orValue({}), sequence['live-cli'].outputs.?diagnostics.orValue({}), sequence['live-remote'].outputs.?diagnostics.orValue({}), sequence['live-linux'].outputs.?diagnostics.orValue({})], 'add') }}

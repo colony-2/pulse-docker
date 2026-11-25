@@ -14,8 +14,9 @@ The managed hook requests only `base: ubuntu*` and `capabilities: [docker]`.
 It declares no CPU, core or memory requirement. Source-YAML and parsed-metadata
 regressions reject unsupported placement keys, including nested overrides.
 Go and the previously approved GCC package provide the deterministic build tools.
-The hook requires four sequential commands: deterministic verification (25 minutes),
-CLI recovery, standalone remote acceptance and Linux acceptance (65 minutes each).
+The hook requires five sequential commands: the controlled hook-contract suite
+(2 minutes), deterministic verification (25 minutes), CLI recovery, standalone
+remote acceptance and Linux acceptance (65 minutes each).
 Each command captures diagnostics and propagates failure; the hook returns passed
 only after every required command succeeds.
 
@@ -23,11 +24,11 @@ The failed-command harness substitutes a controlled Go command and proves that a
 required failure propagates unchanged through the hook entry point, without a
 success report. `TestVerifyHookInputContract` also parses the actual hook and
 checks its typed build-runner inputs, artifact bindings and standalone defaults.
-With c2j available, `c2j test run --file .c2/tests/verify-hook.test.json` exercises
-the recipe interface using a controlled command operation. It checks input
-validation, candidate forwarding as environment data, diagnostic aggregation and
-command-error propagation for all required operations; the real deterministic
-suite still runs through `scripts/verify.sh`.
+The hook runs `c2j test run --file .c2/tests/verify-hook.test.json` on the candidate.
+The suite mocks the hook's commands, including its own invocation, so it neither
+recurses nor runs live scenarios. It checks input validation, candidate forwarding
+as environment data, diagnostic aggregation and command-error propagation. The
+real deterministic and Docker checks still run separately in the hook.
 The tagged integration check requires the persisted-failure regression,
 completed-lease fixture and remote removal-observation checks to be present and
 runs them without Docker while compiling the live suites. The completed-lease
@@ -105,8 +106,9 @@ Both report the native and alternative platforms. Safe decline leaves alternativ
 execution explicitly unexercised. No emulation installation is required here.
 
 The live runner requires all six Linux suites, a complete valid JSON event stream,
-a passing package and exactly one passing D28 branch. A skip, missing branch,
-contradictory result, unrelated suite or truncated stream fails. Messages alone
+a passing package, an explicit pass for `TestDockerLeaseIntegration/completed_lease`
+within the full lease suite, and exactly one passing D28 branch. A skip, missing
+required case, contradictory result, unrelated suite or truncated stream fails. Messages alone
 cannot certify assertions. The local `verifycheck.go` tool validates these results;
 it is verification tooling, not a provider executable.
 

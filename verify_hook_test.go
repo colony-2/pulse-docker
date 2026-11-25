@@ -158,6 +158,7 @@ func TestVerifyHookRequiredCommandBounds(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []struct{ id, run, timeout string }{
+		{"hook-contract", "c2j test run --file .c2/tests/verify-hook.test.json", "2m"},
 		{"deterministic", "./scripts/verify.sh", "25m"},
 		{"live-cli", "./scripts/verify-live.sh cli", "65m"},
 		{"live-remote", "./scripts/verify-live.sh remote", "65m"},

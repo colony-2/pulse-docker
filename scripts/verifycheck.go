@@ -40,6 +40,7 @@ func main() {
 func fail(err error) { fmt.Fprintln(os.Stderr, err); os.Exit(2) }
 
 func live(r io.Reader, mode string) error {
+	const completedLeaseTest = "TestDockerLeaseIntegration/completed_lease"
 	parents := []string{"TestDockerLifecycleResourcesIntegration", "TestDockerLeaseIntegration", "TestDockerDependencyCacheIntegration", "TestDockerNixFetchCacheIntegration", "TestDockerMultiPlatformIntegration", "TestDockerUpgradeIntegration"}
 	switch mode {
 	case "cli":
@@ -103,7 +104,7 @@ func live(r io.Reader, mode string) error {
 		if !packageStarted || !allowed[parent] {
 			return fmt.Errorf("unexpected test %q", e.Test)
 		}
-		if mode == "lease-completion" && e.Test != parent && e.Test != parent+"/completed_lease" {
+		if mode == "lease-completion" && e.Test != parent && e.Test != completedLeaseTest {
 			return fmt.Errorf("unexpected lease subtest")
 		}
 		switch e.Action {
@@ -157,8 +158,8 @@ func live(r io.Reader, mode string) error {
 			return fmt.Errorf("required suite did not pass: %s", p)
 		}
 	}
-	if mode == "lease-completion" && !ended[parents[0]+"/completed_lease"] {
-		return fmt.Errorf("required completed-lease subtest did not pass")
+	if (mode == "linux" || mode == "lease-completion") && !ended[completedLeaseTest] {
+		return fmt.Errorf("required completed-lease subtest did not pass: %s", completedLeaseTest)
 	}
 	if mode == "cli" {
 		for _, scenario := range []string{"outbound_restart", "inbound_parent_loss", "invalid_leases", "invalid_leases/expired", "invalid_leases/completed"} {

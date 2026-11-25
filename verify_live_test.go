@@ -27,15 +27,19 @@ func verificationGo(t *testing.T) string {
 
 func TestVerifyLiveResults(t *testing.T) {
 	const pkg = "github.com/colony-2/pulse-docker/internal/provider"
+	const completedLease = "TestDockerLeaseIntegration/completed_lease"
 	parents := []string{"TestDockerLifecycleResourcesIntegration", "TestDockerLeaseIntegration", "TestDockerDependencyCacheIntegration", "TestDockerNixFetchCacheIntegration", "TestDockerMultiPlatformIntegration", "TestDockerUpgradeIntegration"}
 	event := func(action, name, output string) string {
 		b, _ := json.Marshal(map[string]string{"Action": action, "Package": pkg, "Test": name, "Output": output})
 		return string(b) + "\n"
 	}
-	stream := func(branch string) string {
+	stream := func(branch, leaseResult string) string {
 		s := event("start", "", "")
 		for _, parent := range parents {
 			s += event("run", parent, "")
+			if parent == parents[1] && leaseResult != "" {
+				s += event("run", completedLease, "") + event(leaseResult, completedLease, "")
+			}
 			if parent == parents[4] && branch != "" {
 				name := parent + "/" + branch
 				s += event("run", name, "") + event("output", name, "D28 native=linux/arm64 alternative=linux/amd64\n") + event("pass", name, "")
@@ -44,9 +48,9 @@ func TestVerifyLiveResults(t *testing.T) {
 		}
 		return s + event("pass", "", "")
 	}
-	safe := stream("unavailable_emulation_declines")
-	verified := stream("verified_emulation")
-	lease := event("start", "", "") + event("run", parents[1], "") + event("run", parents[1]+"/completed_lease", "") + event("pass", parents[1]+"/completed_lease", "") + event("pass", parents[1], "") + event("pass", "", "")
+	safe := stream("unavailable_emulation_declines", "pass")
+	verified := stream("verified_emulation", "pass")
+	lease := event("start", "", "") + event("run", parents[1], "") + event("run", completedLease, "") + event("pass", completedLease, "") + event("pass", parents[1], "") + event("pass", "", "")
 	cliParent := "TestDockerCLIIntegration"
 	cliEvents := event("start", "", "") + event("run", cliParent, "")
 	for _, scenario := range []string{"outbound_restart", "inbound_parent_loss"} {
@@ -65,11 +69,13 @@ func TestVerifyLiveResults(t *testing.T) {
 	}{
 		{name: "safe decline", mode: "linux", data: safe, want: "alternative execution unexercised"},
 		{name: "verified emulation", mode: "linux", data: verified, want: "alternative=linux/amd64: verified execution passed"},
-		{name: "missing branch", mode: "linux", data: stream(""), exit: 2},
+		{name: "Linux missing completed lease", mode: "linux", data: stream("unavailable_emulation_declines", ""), want: "required completed-lease subtest did not pass: " + completedLease, exit: 2},
+		{name: "Linux skipped completed lease", mode: "linux", data: stream("unavailable_emulation_declines", "skip"), want: "required live coverage skip: " + completedLease, exit: 2},
+		{name: "missing branch", mode: "linux", data: stream("", "pass"), exit: 2},
 		{name: "skipped branch", mode: "linux", data: strings.Replace(safe, `"Action":"pass","Output":"","Package":"`+pkg+`","Test":"`+parents[4]+`/unavailable_emulation_declines"`, `"Action":"skip","Output":"","Package":"`+pkg+`","Test":"`+parents[4]+`/unavailable_emulation_declines"`, 1), exit: 2},
 		{name: "conflicting branches", mode: "linux", data: strings.Replace(safe, event("pass", parents[4], ""), event("run", parents[4]+"/verified_emulation", "")+event("pass", parents[4]+"/verified_emulation", "")+event("pass", parents[4], ""), 1), exit: 2},
-		{name: "unknown branch", mode: "linux", data: stream("other"), exit: 2},
-		{name: "message alone", mode: "linux", data: strings.Replace(stream(""), event("pass", parents[4], ""), event("output", parents[4], "safe decline proved D28 native=linux/arm64 alternative=linux/amd64")+event("pass", parents[4], ""), 1), exit: 2},
+		{name: "unknown branch", mode: "linux", data: stream("other", "pass"), exit: 2},
+		{name: "message alone", mode: "linux", data: strings.Replace(stream("", "pass"), event("pass", parents[4], ""), event("output", parents[4], "safe decline proved D28 native=linux/arm64 alternative=linux/amd64")+event("pass", parents[4], ""), 1), exit: 2},
 		{name: "malformed", mode: "linux", data: safe + "{", exit: 2},
 		{name: "truncated", mode: "linux", data: strings.TrimSuffix(safe, event("pass", "", "")), exit: 2},
 		{name: "unrelated skip", mode: "linux", data: strings.Replace(safe, event("pass", parents[0], ""), event("skip", parents[0], ""), 1), exit: 2},

@@ -16,6 +16,27 @@
         "ops": [
           {
             "match": {
+              "node_path": "pulse-docker-verify/hook-contract"
+            },
+            "behavior": {
+              "mode": "return",
+              "outputs": {
+                "success": true,
+                "exit_code": 0,
+                "timed_out": false,
+                "stdout": "controlled verification success",
+                "error_message": "",
+                "diagnostics": {
+                  "_c2j/execution/hook-contract.log": {
+                    "kind": "attached",
+                    "name": "_c2j/execution/hook-contract.log"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "match": {
               "node_path": "pulse-docker-verify/deterministic"
             },
             "behavior": {
@@ -113,7 +134,31 @@
         },
         {
           "type": "cel_true",
-          "expr": "calls.size() == 4"
+          "expr": "calls.size() == 5"
+        },
+        {
+          "type": "op_input_equals",
+          "node_path": "pulse-docker-verify/hook-contract",
+          "path": "run",
+          "value": "c2j test run --file .c2/tests/verify-hook.test.json"
+        },
+        {
+          "type": "op_input_equals",
+          "node_path": "pulse-docker-verify/hook-contract",
+          "path": "env.VERIFY_CANDIDATE",
+          "value": "candidate; $(touch never-execute)"
+        },
+        {
+          "type": "op_input_equals",
+          "node_path": "pulse-docker-verify/hook-contract",
+          "path": "capture_diagnostics",
+          "value": "always"
+        },
+        {
+          "type": "op_input_equals",
+          "node_path": "pulse-docker-verify/hook-contract",
+          "path": "timeout",
+          "value": "2m"
         },
         {
           "type": "op_input_equals",
@@ -189,6 +234,10 @@
               "kind": "attached",
               "name": "_c2j/execution/deterministic.log"
             },
+            "_c2j/execution/hook-contract.log": {
+              "kind": "attached",
+              "name": "_c2j/execution/hook-contract.log"
+            },
             "_c2j/execution/live-cli.log": {
               "kind": "attached",
               "name": "_c2j/execution/live-cli.log"
@@ -205,7 +254,7 @@
         },
         {
           "type": "cel_true",
-          "expr": "calls.map(c, c.node_path) == ['pulse-docker-verify/deterministic', 'pulse-docker-verify/live-cli', 'pulse-docker-verify/live-remote', 'pulse-docker-verify/live-linux']"
+          "expr": "calls.map(c, c.node_path) == ['pulse-docker-verify/hook-contract', 'pulse-docker-verify/deterministic', 'pulse-docker-verify/live-cli', 'pulse-docker-verify/live-remote', 'pulse-docker-verify/live-linux']"
         },
         {
           "type": "op_input_equals",
@@ -247,6 +296,27 @@
         "ops": [
           {
             "match": {
+              "node_path": "pulse-docker-verify/hook-contract"
+            },
+            "behavior": {
+              "mode": "return",
+              "outputs": {
+                "success": true,
+                "exit_code": 0,
+                "timed_out": false,
+                "stdout": "controlled verification success",
+                "error_message": "",
+                "diagnostics": {
+                  "_c2j/execution/hook-contract.log": {
+                    "kind": "attached",
+                    "name": "_c2j/execution/hook-contract.log"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "match": {
               "node_path": "pulse-docker-verify/deterministic"
             },
             "behavior": {
@@ -344,7 +414,31 @@
         },
         {
           "type": "cel_true",
-          "expr": "calls.size() == 4"
+          "expr": "calls.size() == 5"
+        },
+        {
+          "type": "op_input_equals",
+          "node_path": "pulse-docker-verify/hook-contract",
+          "path": "run",
+          "value": "c2j test run --file .c2/tests/verify-hook.test.json"
+        },
+        {
+          "type": "op_input_equals",
+          "node_path": "pulse-docker-verify/hook-contract",
+          "path": "env.VERIFY_CANDIDATE",
+          "value": "working-tree"
+        },
+        {
+          "type": "op_input_equals",
+          "node_path": "pulse-docker-verify/hook-contract",
+          "path": "capture_diagnostics",
+          "value": "always"
+        },
+        {
+          "type": "op_input_equals",
+          "node_path": "pulse-docker-verify/hook-contract",
+          "path": "timeout",
+          "value": "2m"
         },
         {
           "type": "op_input_equals",
@@ -420,6 +514,10 @@
               "kind": "attached",
               "name": "_c2j/execution/deterministic.log"
             },
+            "_c2j/execution/hook-contract.log": {
+              "kind": "attached",
+              "name": "_c2j/execution/hook-contract.log"
+            },
             "_c2j/execution/live-cli.log": {
               "kind": "attached",
               "name": "_c2j/execution/live-cli.log"
@@ -436,7 +534,7 @@
         },
         {
           "type": "cel_true",
-          "expr": "calls.map(c, c.node_path) == ['pulse-docker-verify/deterministic', 'pulse-docker-verify/live-cli', 'pulse-docker-verify/live-remote', 'pulse-docker-verify/live-linux']"
+          "expr": "calls.map(c, c.node_path) == ['pulse-docker-verify/hook-contract', 'pulse-docker-verify/deterministic', 'pulse-docker-verify/live-cli', 'pulse-docker-verify/live-remote', 'pulse-docker-verify/live-linux']"
         },
         {
           "type": "op_input_equals",
@@ -471,6 +569,28 @@
       ]
     },
     {
+      "id": "hook-contract-failure-propagates",
+      "type": "recipe_case",
+      "inputs": {},
+      "mocks": {
+        "ops": [
+          {
+            "match": {
+              "node_path": "pulse-docker-verify/hook-contract"
+            },
+            "behavior": {
+              "mode": "fail",
+              "error": {
+                "message": "controlled hook-contract failure"
+              }
+            }
+          }
+        ]
+      },
+      "assertions": [],
+      "expect_error": "controlled hook-contract failure"
+    },
+    {
       "id": "command-error-propagates",
       "type": "recipe_case",
       "inputs": {
@@ -483,6 +603,27 @@
       },
       "mocks": {
         "ops": [
+          {
+            "match": {
+              "node_path": "pulse-docker-verify/hook-contract"
+            },
+            "behavior": {
+              "mode": "return",
+              "outputs": {
+                "success": true,
+                "exit_code": 0,
+                "timed_out": false,
+                "stdout": "controlled verification success",
+                "error_message": "",
+                "diagnostics": {
+                  "_c2j/execution/hook-contract.log": {
+                    "kind": "attached",
+                    "name": "_c2j/execution/hook-contract.log"
+                  }
+                }
+              }
+            }
+          },
           {
             "match": {
               "node_path": "pulse-docker-verify/deterministic"
@@ -577,6 +718,27 @@
         "ops": [
           {
             "match": {
+              "node_path": "pulse-docker-verify/hook-contract"
+            },
+            "behavior": {
+              "mode": "return",
+              "outputs": {
+                "success": true,
+                "exit_code": 0,
+                "timed_out": false,
+                "stdout": "controlled verification success",
+                "error_message": "",
+                "diagnostics": {
+                  "_c2j/execution/hook-contract.log": {
+                    "kind": "attached",
+                    "name": "_c2j/execution/hook-contract.log"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "match": {
               "node_path": "pulse-docker-verify/deterministic"
             },
             "behavior": {
@@ -618,6 +780,27 @@
       "inputs": {},
       "mocks": {
         "ops": [
+          {
+            "match": {
+              "node_path": "pulse-docker-verify/hook-contract"
+            },
+            "behavior": {
+              "mode": "return",
+              "outputs": {
+                "success": true,
+                "exit_code": 0,
+                "timed_out": false,
+                "stdout": "controlled verification success",
+                "error_message": "",
+                "diagnostics": {
+                  "_c2j/execution/hook-contract.log": {
+                    "kind": "attached",
+                    "name": "_c2j/execution/hook-contract.log"
+                  }
+                }
+              }
+            }
+          },
           {
             "match": {
               "node_path": "pulse-docker-verify/deterministic"
@@ -703,6 +886,27 @@
       "inputs": {},
       "mocks": {
         "ops": [
+          {
+            "match": {
+              "node_path": "pulse-docker-verify/hook-contract"
+            },
+            "behavior": {
+              "mode": "return",
+              "outputs": {
+                "success": true,
+                "exit_code": 0,
+                "timed_out": false,
+                "stdout": "controlled verification success",
+                "error_message": "",
+                "diagnostics": {
+                  "_c2j/execution/hook-contract.log": {
+                    "kind": "attached",
+                    "name": "_c2j/execution/hook-contract.log"
+                  }
+                }
+              }
+            }
+          },
           {
             "match": {
               "node_path": "pulse-docker-verify/deterministic"
